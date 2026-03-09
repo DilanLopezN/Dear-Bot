@@ -23,7 +23,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     } catch (err: any) {
       set({
         loading: false,
-        error: err.response?.data?.message || 'Credenciais inválidas',
+        error: err.response?.data?.message || 'Token inválido ou expirado',
       });
       throw err;
     }

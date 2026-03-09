@@ -27,9 +27,18 @@ class ApiService {
   }
 
   // Auth
+  async register(name: string, email: string, password: string) {
+    const { data } = await this.client.post('/auth/register', { name, email, password });
+    return data;
+  }
+
+  async requestToken(email: string) {
+    const { data } = await this.client.post('/auth/request-token', { email });
+    return data;
+  }
+
   async login(email: string, token: string) {
-    // Login via email + token recebido por email
-    const { data } = await this.client.post('/auth/login', { email, password: token });
+    const { data } = await this.client.post('/auth/login', { email, token });
     localStorage.setItem('access_token', data.access_token);
     return data;
   }

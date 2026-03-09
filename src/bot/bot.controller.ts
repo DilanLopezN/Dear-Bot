@@ -19,6 +19,11 @@ export class BotController {
     return this.botService.findAll(userId);
   }
 
+  @Get('dashboard/overview')
+  getDashboardOverview(@CurrentUser('id') userId: string) {
+    return this.botService.getDashboardOverview(userId);
+  }
+
   @Get(':id')
   findOne(@CurrentUser('id') userId: string, @Param('id') id: string) {
     return this.botService.findOne(userId, id);

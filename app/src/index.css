@@ -1,6 +1,7 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;500&family=Outfit:wght@500;600;700;800&display=swap');
 @import "tailwindcss";
 
-@theme {
+:root {
   --color-bg-primary: #050505;
   --color-bg-secondary: #0a0a0a;
   --color-bg-tertiary: #111111;
@@ -36,6 +37,19 @@ body {
   overflow: hidden;
 }
 
+input,
+select,
+textarea {
+  min-height: 46px;
+  line-height: 1.4;
+  font-size: 14px;
+}
+
+button {
+  min-height: 44px;
+  line-height: 1;
+}
+
 @layer utilities {
   .drag-region {
     -webkit-app-region: drag;
@@ -46,14 +60,14 @@ body {
 }
 
 ::-webkit-scrollbar {
-  width: 6px;
+  width: 8px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
   background: var(--color-border);
-  border-radius: 3px;
+  border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-border-light);
@@ -64,7 +78,6 @@ input:-webkit-autofill {
   -webkit-text-fill-color: var(--color-text-primary) !important;
 }
 
-/* WhatsApp Emulator Styles */
 .whatsapp-emulator {
   background: linear-gradient(180deg, #0b141a 0%, #0b141a 100%);
 }

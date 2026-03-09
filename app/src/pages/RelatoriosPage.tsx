@@ -2,11 +2,11 @@ import { useEffect, useState } from 'react';
 import { useBotStore } from '@/stores/bot.store';
 import { api } from '@/services/api';
 import {
-  BarChart3, MessageSquare, Users, TrendingUp, Clock,
+  BarChart3, MessageSquare, Users, TrendingUp,
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, LineChart, Line, Legend,
+  PieChart, Pie, Cell,
 } from 'recharts';
 
 const COLORS = ['#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#06b6d4'];
@@ -48,22 +48,22 @@ export default function RelatoriosPage() {
   const totalMensagens = botStats.reduce((a, b) => a + b.mensagens, 0);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div>
         <h1 className="text-2xl font-bold text-[var(--color-text-primary)]" style={{ fontFamily: 'var(--font-display)' }}>Relatórios</h1>
-        <p className="text-sm text-[var(--color-text-secondary)] mt-1">Análise de desempenho dos bots</p>
+        <p className="text-sm text-[var(--color-text-secondary)] mt-1.5">Análise de desempenho dos bots</p>
       </div>
 
       {/* Quick Stats */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
         {[
           { label: 'Total Bots', value: bots.length, icon: BarChart3, color: 'var(--color-accent)' },
           { label: 'Total Conversas', value: totalConversas, icon: Users, color: '#22c55e' },
           { label: 'Total Mensagens', value: totalMensagens, icon: MessageSquare, color: '#f59e0b' },
           { label: 'Média msg/bot', value: bots.length ? Math.round(totalMensagens / bots.length) : 0, icon: TrendingUp, color: '#06b6d4' },
         ].map((s) => (
-          <div key={s.label} className="bg-[var(--color-bg-card)] border border-[var(--color-border)] rounded-xl p-5">
-            <div className="flex items-center justify-between mb-2">
+          <div key={s.label} className="bg-[var(--color-bg-card)] border border-[var(--color-border)] rounded-xl p-6">
+            <div className="flex items-center justify-between mb-3">
               <p className="text-xs font-medium text-[var(--color-text-muted)] uppercase tracking-wider">{s.label}</p>
               <s.icon className="w-4 h-4" style={{ color: s.color }} />
             </div>
@@ -75,11 +75,11 @@ export default function RelatoriosPage() {
       {loading ? (
         <p className="text-sm text-[var(--color-text-muted)] text-center py-10">Carregando relatórios...</p>
       ) : (
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           {/* Mensagens por Bot */}
-          <div className="bg-[var(--color-bg-card)] border border-[var(--color-border)] rounded-xl p-5">
-            <h3 className="text-sm font-medium text-[var(--color-text-secondary)] mb-4">Mensagens por Bot</h3>
-            <ResponsiveContainer width="100%" height={250}>
+          <div className="bg-[var(--color-bg-card)] border border-[var(--color-border)] rounded-xl p-6">
+            <h3 className="text-sm font-medium text-[var(--color-text-secondary)] mb-5">Mensagens por Bot</h3>
+            <ResponsiveContainer width="100%" height={260}>
               <BarChart data={botStats}>
                 <XAxis dataKey="name" stroke="var(--color-text-muted)" fontSize={11} tickLine={false} axisLine={false} />
                 <YAxis stroke="var(--color-text-muted)" fontSize={11} tickLine={false} axisLine={false} />
@@ -91,12 +91,12 @@ export default function RelatoriosPage() {
           </div>
 
           {/* Distribuição por modo */}
-          <div className="bg-[var(--color-bg-card)] border border-[var(--color-border)] rounded-xl p-5">
-            <h3 className="text-sm font-medium text-[var(--color-text-secondary)] mb-4">Distribuição por Modo</h3>
+          <div className="bg-[var(--color-bg-card)] border border-[var(--color-border)] rounded-xl p-6">
+            <h3 className="text-sm font-medium text-[var(--color-text-secondary)] mb-5">Distribuição por Modo</h3>
             {modeData.length === 0 ? (
               <p className="text-sm text-[var(--color-text-muted)] text-center py-10">Sem dados</p>
             ) : (
-              <ResponsiveContainer width="100%" height={250}>
+              <ResponsiveContainer width="100%" height={260}>
                 <PieChart>
                   <Pie data={modeData} cx="50%" cy="50%" innerRadius={60} outerRadius={90} dataKey="value" label={({ name, value }) => `${name}: ${value}`} labelLine={false}>
                     {modeData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}

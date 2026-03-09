@@ -6,7 +6,7 @@ export default function AppLayout() {
     <div className="flex h-screen bg-[var(--color-bg-primary)]">
       <Sidebar />
       <main className="flex-1 overflow-y-auto">
-        <div className="p-6">
+        <div className="p-8 max-w-[1400px] mx-auto">
           <Outlet />
         </div>
       </main>

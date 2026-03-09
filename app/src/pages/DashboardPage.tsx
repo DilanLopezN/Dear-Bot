@@ -117,7 +117,7 @@ export default function DashboardPage() {
                 <div className="flex items-center gap-3">
                   <div className={`w-2 h-2 rounded-full ${bot.isActive ? 'bg-green-400' : 'bg-[var(--color-text-muted)]'}`} />
                   <span className="text-sm font-medium text-[var(--color-text-primary)]">{bot.name}</span>
-                  <span className="text-xs px-2 py-0.5 rounded-full bg-[var(--color-accent-glow)] text-[var(--color-accent-hover)]">
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-[var(--color-accent-glow)] text-[var(--color-accent)]">
                     {bot.responseMode}
                   </span>
                 </div>

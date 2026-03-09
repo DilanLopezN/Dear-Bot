@@ -12,10 +12,15 @@ export class RegisterDto {
   password: string;
 }
 
+export class RequestTokenDto {
+  @IsEmail()
+  email: string;
+}
+
 export class LoginDto {
   @IsEmail()
   email: string;
 
   @IsString()
-  password: string;
+  token: string;
 }

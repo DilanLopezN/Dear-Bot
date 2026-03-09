@@ -33,7 +33,7 @@ export default function Sidebar() {
           <MessageSquare className="w-4 h-4 text-white" />
         </div>
         <span className="text-base font-bold tracking-tight text-[var(--color-text-primary)] no-drag" style={{ fontFamily: 'var(--font-display)' }}>
-          Chatbot SaaS
+          Dear Bot
         </span>
       </div>
 
@@ -47,7 +47,7 @@ export default function Sidebar() {
             className={({ isActive }) =>
               `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
                 isActive
-                  ? 'bg-[var(--color-accent-glow)] text-[var(--color-accent-hover)] border border-[var(--color-accent)]/20'
+                  ? 'bg-[var(--color-accent-glow)] text-[var(--color-accent)] border border-[var(--color-accent)]/20'
                   : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)]'
               }`
             }

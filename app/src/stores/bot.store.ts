@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { api } from '@/services/api';
+import { api, type FlowConfig } from '@/services/api';
 
 export interface Bot {
   id: string;
@@ -14,6 +14,7 @@ export interface Bot {
     name: string;
     model: string;
   } | null;
+  flowConfig?: FlowConfig | null;
   createdAt: string;
   whatsappChannel?: {
     id: string;
@@ -32,7 +33,7 @@ interface BotState {
   loading: boolean;
   fetchBots: () => Promise<void>;
   selectBot: (bot: Bot | null) => void;
-  createBot: (payload: { name: string; responseMode?: string; systemPrompt?: string }) => Promise<Bot>;
+  createBot: (payload: { name: string; responseMode?: string; systemPrompt?: string; aiConfigId?: string | null; flowConfig?: FlowConfig }) => Promise<Bot>;
   updateBot: (botId: string, payload: Record<string, unknown>) => Promise<void>;
   deleteBot: (botId: string) => Promise<void>;
 }

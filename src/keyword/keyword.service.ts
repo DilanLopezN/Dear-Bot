@@ -37,6 +37,18 @@ export class KeywordService {
     return this.prisma.keyword.delete({ where: { id: keywordId } });
   }
 
+
+  async findByExactTrigger(botId: string, trigger: string) {
+    return this.prisma.keyword.findFirst({
+      where: {
+        botId,
+        isActive: true,
+        trigger: { equals: trigger, mode: 'insensitive' },
+      },
+      orderBy: { priority: 'desc' },
+    });
+  }
+
   /** Busca resposta por keyword - usado internamente pelo webhook */
   async findMatch(botId: string, message: string): Promise<string | null> {
     const keywords = await this.prisma.keyword.findMany({

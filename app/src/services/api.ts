@@ -31,10 +31,29 @@ export interface MonthlyMetric {
   outbound: number;
 }
 
+export interface GotoTarget {
+  type: 'MENU' | 'KEYWORD';
+  target: string;
+}
+
 export interface MenuOption {
   id: string;
   title: string;
   description?: string;
+  goto?: GotoTarget;
+}
+
+export interface FlowStep {
+  type: 'GOTO_MENU';
+  menuTrigger: string;
+}
+
+export interface FlowConfig {
+  steps?: FlowStep[];
+  fallback?: {
+    message: string;
+    goto?: GotoTarget;
+  };
 }
 
 export interface InteractiveMenu {
@@ -109,7 +128,7 @@ class ApiService {
     return data;
   }
 
-  async createBot(payload: { name: string; responseMode?: string; systemPrompt?: string }) {
+  async createBot(payload: { name: string; responseMode?: string; systemPrompt?: string; aiConfigId?: string | null; flowConfig?: FlowConfig }) {
     const { data } = await this.client.post('/bots', payload);
     return data;
   }

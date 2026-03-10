@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { useBotStore, type Bot } from '@/stores/bot.store';
-import { api, type InteractiveMenu, type MenuOption } from '@/services/api';
+import { api, type InteractiveMenu, type MenuOption, type FlowConfig, type GotoTarget } from '@/services/api';
 import {
   Plus, Trash2, Pencil, Zap, Key, X, Power, PowerOff,
   MessageSquare, Bot as BotIcon, Phone, Loader2, Send,
@@ -44,7 +44,13 @@ function FormField({ label, error, children }: { label: string; error?: string; 
 // ─── Create/Edit Bot Modal ───
 function BotFormModal({ open, onClose, bot }: { open: boolean; onClose: () => void; bot?: Bot | null }) {
   const { register, handleSubmit, reset, watch, formState: { errors } } = useForm({
-    defaultValues: { name: bot?.name || '', responseMode: bot?.responseMode || 'KEYWORDS', systemPrompt: bot?.systemPrompt || '', aiConfigId: bot?.aiConfigId || '' },
+    defaultValues: {
+      name: bot?.name || '',
+      responseMode: bot?.responseMode || 'KEYWORDS',
+      systemPrompt: bot?.systemPrompt || '',
+      aiConfigId: bot?.aiConfigId || '',
+      flowConfigJson: bot?.flowConfig ? JSON.stringify(bot.flowConfig, null, 2) : '',
+    },
   });
   const { createBot, updateBot } = useBotStore();
   const [saving, setSaving] = useState(false);
@@ -52,7 +58,13 @@ function BotFormModal({ open, onClose, bot }: { open: boolean; onClose: () => vo
   const responseMode = watch('responseMode');
 
   useEffect(() => {
-    reset({ name: bot?.name || '', responseMode: bot?.responseMode || 'KEYWORDS', systemPrompt: bot?.systemPrompt || '', aiConfigId: bot?.aiConfigId || '' });
+    reset({
+      name: bot?.name || '',
+      responseMode: bot?.responseMode || 'KEYWORDS',
+      systemPrompt: bot?.systemPrompt || '',
+      aiConfigId: bot?.aiConfigId || '',
+      flowConfigJson: bot?.flowConfig ? JSON.stringify(bot.flowConfig, null, 2) : '',
+    });
   }, [bot, reset]);
 
   useEffect(() => {
@@ -64,11 +76,25 @@ function BotFormModal({ open, onClose, bot }: { open: boolean; onClose: () => vo
   const onSubmit = async (data: any) => {
     setSaving(true);
     try {
-      const payload = { ...data, aiConfigId: data.aiConfigId || null };
+      let parsedFlowConfig: FlowConfig | undefined = undefined;
+      if (data.flowConfigJson?.trim()) {
+        parsedFlowConfig = JSON.parse(data.flowConfigJson);
+      }
+
+      const payload = {
+        name: data.name,
+        responseMode: data.responseMode,
+        systemPrompt: data.systemPrompt || undefined,
+        aiConfigId: data.aiConfigId || null,
+        flowConfig: parsedFlowConfig,
+      };
+
       if (bot) await updateBot(bot.id, payload);
       else await createBot(payload);
       onClose();
-    } catch {} finally { setSaving(false); }
+    } catch {
+      alert('flowConfig inválido. Informe um JSON válido.');
+    } finally { setSaving(false); }
   };
 
   return (
@@ -101,6 +127,17 @@ function BotFormModal({ open, onClose, bot }: { open: boolean; onClose: () => vo
         )}
         <FormField label="System Prompt (IA)">
           <textarea {...register('systemPrompt')} placeholder="Instruções para a IA..." rows={4} className={inputClass + ' resize-none'} />
+        </FormField>
+        <FormField label="Flow config (JSON)">
+          <textarea
+            {...register('flowConfigJson')}
+            placeholder={`{\n  "steps": [{ "type": "GOTO_MENU", "menuTrigger": "menu_principal" }],\n  "fallback": {\n    "message": "Desculpe, ocorreu um erro no fluxo.",\n    "goto": { "type": "MENU", "target": "menu_principal" }\n  }\n}`}
+            rows={8}
+            className={inputClass + ' resize-y font-mono text-xs'}
+          />
+          <p className="text-xs text-[var(--color-text-muted)] mt-1.5">
+            Configure passos automáticos de início da conversa, fallback e goto.
+          </p>
         </FormField>
         <div className="flex justify-end gap-3 mt-7">
           <button type="button" onClick={onClose} className={btnSecondary}>Cancelar</button>
@@ -177,6 +214,8 @@ function MenusModal({ open, onClose, bot }: { open: boolean; onClose: () => void
   const [options, setOptions] = useState<MenuOption[]>([]);
   const [optTitle, setOptTitle] = useState('');
   const [optDesc, setOptDesc] = useState('');
+  const [optGotoType, setOptGotoType] = useState<GotoTarget['type'] | ''>('');
+  const [optGotoTarget, setOptGotoTarget] = useState('');
 
   const load = async () => {
     setLoading(true);
@@ -186,9 +225,16 @@ function MenusModal({ open, onClose, bot }: { open: boolean; onClose: () => void
 
   const addOption = () => {
     if (!optTitle.trim()) return;
-    setOptions([...options, { id: `opt_${Date.now()}`, title: optTitle.trim(), description: optDesc.trim() || undefined }]);
+
+    const goto = optGotoType && optGotoTarget.trim()
+      ? { type: optGotoType, target: optGotoTarget.trim() }
+      : undefined;
+
+    setOptions([...options, { id: `opt_${Date.now()}`, title: optTitle.trim(), description: optDesc.trim() || undefined, goto }]);
     setOptTitle('');
     setOptDesc('');
+    setOptGotoType('');
+    setOptGotoTarget('');
   };
 
   const removeOption = (id: string) => setOptions(options.filter((o) => o.id !== id));
@@ -236,10 +282,18 @@ function MenusModal({ open, onClose, bot }: { open: boolean; onClose: () => void
 
           <div className="mb-4">
             <label className="text-sm font-medium text-[var(--color-text-secondary)] mb-2 block">Opções do menu</label>
-            <div className="flex gap-3 mb-3">
-              <input value={optTitle} onChange={(e) => setOptTitle(e.target.value)} placeholder="Título da opção" className={inputClass + ' flex-1'} />
-              <input value={optDesc} onChange={(e) => setOptDesc(e.target.value)} placeholder="Descrição (opcional)" className={inputClass + ' flex-1'} />
-              <button type="button" onClick={addOption} className={btnPrimary + ' shrink-0'}><Plus className="w-4 h-4" /></button>
+            <div className="grid grid-cols-5 gap-3 mb-3">
+              <input value={optTitle} onChange={(e) => setOptTitle(e.target.value)} placeholder="Título da opção" className={inputClass + ' col-span-2'} />
+              <input value={optDesc} onChange={(e) => setOptDesc(e.target.value)} placeholder="Descrição (opcional)" className={inputClass + ' col-span-2'} />
+              <button type="button" onClick={addOption} className={btnPrimary + ' shrink-0 justify-center'}><Plus className="w-4 h-4" /></button>
+            </div>
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              <select value={optGotoType} onChange={(e) => setOptGotoType(e.target.value as GotoTarget['type'] | '')} className={inputClass}>
+                <option value="">Sem goto</option>
+                <option value="MENU">Goto Menu</option>
+                <option value="KEYWORD">Goto Keyword</option>
+              </select>
+              <input value={optGotoTarget} onChange={(e) => setOptGotoTarget(e.target.value)} placeholder="Trigger destino (menu/keyword)" className={inputClass} />
             </div>
             <div className="space-y-2 max-h-[200px] overflow-y-auto">
               {options.map((opt, i) => (
@@ -247,6 +301,7 @@ function MenusModal({ open, onClose, bot }: { open: boolean; onClose: () => void
                   <span className="text-sm text-[var(--color-text-primary)]">
                     <strong className="text-[var(--color-accent)]">{i + 1}.</strong> {opt.title}
                     {opt.description && <span className="text-[var(--color-text-muted)] ml-2">- {opt.description}</span>}
+                    {opt.goto && <span className="text-blue-400 ml-2">→ {opt.goto.type}:{opt.goto.target}</span>}
                   </span>
                   <button type="button" onClick={() => removeOption(opt.id)} className="text-red-400 hover:text-red-300 p-1 cursor-pointer"><X className="w-3.5 h-3.5" /></button>
                 </div>
@@ -282,6 +337,7 @@ function MenusModal({ open, onClose, bot }: { open: boolean; onClose: () => void
                       <div key={opt.id} className="text-xs text-[var(--color-text-secondary)] pl-3">
                         <span className="text-[var(--color-accent)]">{i + 1}.</span> {opt.title}
                         {opt.description && <span className="text-[var(--color-text-muted)]"> - {opt.description}</span>}
+                        {opt.goto && <span className="text-blue-400"> → {opt.goto.type}:{opt.goto.target}</span>}
                       </div>
                     ))}
                   </div>

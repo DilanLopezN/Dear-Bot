@@ -1,5 +1,18 @@
 import axios, { AxiosInstance } from 'axios';
 
+
+export interface DashboardOverview {
+  totals: {
+    totalBots: number;
+    activeBots: number;
+    connectedBots: number;
+    totalConversations: number;
+    totalMessages: number;
+  };
+  dailyMetrics: Array<{ name: string; mensagens: number; conversas: number }>;
+  recentBots: any[];
+}
+
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 class ApiService {
@@ -112,6 +125,11 @@ class ApiService {
   }
 
   // Conversations
+  async getDashboardOverview(): Promise<DashboardOverview> {
+    const { data } = await this.client.get('/bots/dashboard/overview');
+    return data;
+  }
+
   async getConversations(botId: string) {
     const { data } = await this.client.get(`/bots/${botId}/conversations`);
     return data;

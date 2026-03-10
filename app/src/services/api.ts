@@ -43,6 +43,17 @@ export interface MenuOption {
   goto?: GotoTarget;
 }
 
+export interface Keyword {
+  id: string;
+  botId: string;
+  trigger: string;
+  response: string;
+  priority: number;
+  isActive: boolean;
+  goto?: GotoTarget;
+  createdAt: string;
+}
+
 export interface FlowStep {
   type: 'GOTO_MENU' | 'GOTO_KEYWORD';
   menuTrigger?: string;
@@ -50,6 +61,7 @@ export interface FlowStep {
 }
 
 export interface FlowConfig {
+  initialInteraction?: GotoTarget;
   steps?: FlowStep[];
   fallback?: {
     message: string;
@@ -145,12 +157,12 @@ class ApiService {
   }
 
   // Keywords
-  async getKeywords(botId: string) {
+  async getKeywords(botId: string): Promise<Keyword[]> {
     const { data } = await this.client.get(`/bots/${botId}/keywords`);
     return data;
   }
 
-  async createKeyword(botId: string, payload: { trigger: string; response: string; priority?: number }) {
+  async createKeyword(botId: string, payload: { trigger: string; response: string; priority?: number; goto?: GotoTarget }) {
     const { data } = await this.client.post(`/bots/${botId}/keywords`, payload);
     return data;
   }

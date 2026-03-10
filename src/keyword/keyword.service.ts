@@ -3,6 +3,16 @@ import { PrismaService } from '../prisma/prisma.service';
 import { BotService } from '../bot/bot.service';
 import { CreateKeywordDto, UpdateKeywordDto } from './dto/keyword.dto';
 
+export interface KeywordGoto {
+  type: 'MENU' | 'KEYWORD';
+  target: string;
+}
+
+export interface KeywordMatchResult {
+  response: string;
+  goto?: KeywordGoto;
+}
+
 @Injectable()
 export class KeywordService {
   constructor(
@@ -13,7 +23,13 @@ export class KeywordService {
   async create(userId: string, botId: string, dto: CreateKeywordDto) {
     await this.botService.findOne(userId, botId);
     return this.prisma.keyword.create({
-      data: { ...dto, botId },
+      data: {
+        botId,
+        trigger: dto.trigger,
+        response: dto.response,
+        priority: dto.priority,
+        goto: dto.goto ? (dto.goto as any) : undefined,
+      },
     });
   }
 
@@ -29,14 +45,19 @@ export class KeywordService {
     await this.botService.findOne(userId, botId);
     const keyword = await this.prisma.keyword.findFirst({ where: { id: keywordId, botId } });
     if (!keyword) throw new NotFoundException('Keyword não encontrada');
-    return this.prisma.keyword.update({ where: { id: keywordId }, data: dto });
+    return this.prisma.keyword.update({
+      where: { id: keywordId },
+      data: {
+        ...dto,
+        goto: dto.goto === null ? null : dto.goto ? (dto.goto as any) : undefined,
+      },
+    });
   }
 
   async remove(userId: string, botId: string, keywordId: string) {
     await this.botService.findOne(userId, botId);
     return this.prisma.keyword.delete({ where: { id: keywordId } });
   }
-
 
   async findByExactTrigger(botId: string, trigger: string) {
     return this.prisma.keyword.findFirst({
@@ -50,7 +71,7 @@ export class KeywordService {
   }
 
   /** Busca resposta por keyword - usado internamente pelo webhook */
-  async findMatch(botId: string, message: string): Promise<string | null> {
+  async findMatch(botId: string, message: string): Promise<KeywordMatchResult | null> {
     const keywords = await this.prisma.keyword.findMany({
       where: { botId, isActive: true },
       orderBy: { priority: 'desc' },
@@ -59,7 +80,10 @@ export class KeywordService {
     const normalized = message.toLowerCase().trim();
     for (const kw of keywords) {
       if (normalized.includes(kw.trigger.toLowerCase())) {
-        return kw.response;
+        return {
+          response: kw.response,
+          goto: kw.goto as unknown as KeywordGoto | undefined,
+        };
       }
     }
     return null;

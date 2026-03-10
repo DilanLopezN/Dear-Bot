@@ -1,11 +1,12 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { useBotStore, type Bot } from '@/stores/bot.store';
-import { api, type InteractiveMenu, type MenuOption, type FlowConfig, type GotoTarget } from '@/services/api';
+import { api, type InteractiveMenu, type MenuOption, type FlowConfig, type GotoTarget, type Keyword } from '@/services/api';
 import {
   Plus, Trash2, Pencil, Zap, Key, X, Power, PowerOff,
   MessageSquare, Bot as BotIcon, Phone, Loader2, Send,
   Play, ArrowLeft, Check, CheckCheck, List, Cpu,
+  GitBranch, ChevronRight, ArrowRight,
 } from 'lucide-react';
 
 // ─── Shared styles ───
@@ -41,6 +42,58 @@ function FormField({ label, error, children }: { label: string; error?: string; 
   );
 }
 
+// ─── Goto Selector (reusable) ───
+function GotoSelector({
+  gotoType,
+  gotoTarget,
+  onTypeChange,
+  onTargetChange,
+  keywords,
+  menus,
+  label,
+}: {
+  gotoType: GotoTarget['type'] | '';
+  gotoTarget: string;
+  onTypeChange: (v: GotoTarget['type'] | '') => void;
+  onTargetChange: (v: string) => void;
+  keywords: Keyword[];
+  menus: InteractiveMenu[];
+  label?: string;
+}) {
+  const targets = gotoType === 'MENU'
+    ? menus.filter(m => m.isActive !== false)
+    : gotoType === 'KEYWORD'
+      ? keywords.filter(k => k.isActive !== false)
+      : [];
+
+  return (
+    <div>
+      {label && <label className="text-xs font-medium text-[var(--color-text-secondary)] mb-1.5 block">{label}</label>}
+      <div className="grid grid-cols-2 gap-2">
+        <select value={gotoType} onChange={(e) => { onTypeChange(e.target.value as GotoTarget['type'] | ''); onTargetChange(''); }} className={inputClass}>
+          <option value="">Sem goto</option>
+          <option value="MENU">Goto Menu</option>
+          <option value="KEYWORD">Goto Keyword</option>
+        </select>
+        {gotoType ? (
+          <select value={gotoTarget} onChange={(e) => onTargetChange(e.target.value)} className={inputClass}>
+            <option value="">Selecione...</option>
+            {targets.map((t) => (
+              <option key={'trigger' in t ? t.trigger : t.trigger} value={'trigger' in t ? t.trigger : t.trigger}>
+                {'title' in t ? `${t.trigger} - ${t.title}` : `${t.trigger} → ${t.response.substring(0, 30)}...`}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <div className="px-4 py-3 rounded-xl bg-[var(--color-bg-input)] border border-[var(--color-border)] text-sm text-[var(--color-text-muted)]">
+            Sem navegação
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Create/Edit Bot Modal ───
 function BotFormModal({ open, onClose, bot }: { open: boolean; onClose: () => void; bot?: Bot | null }) {
   const { register, handleSubmit, reset, watch, formState: { errors } } = useForm({
@@ -48,71 +101,108 @@ function BotFormModal({ open, onClose, bot }: { open: boolean; onClose: () => vo
       name: bot?.name || '',
       responseMode: bot?.responseMode || 'KEYWORDS',
       systemPrompt: bot?.systemPrompt || '',
-      initialMessage: bot?.initialMessage || '',
       aiConfigId: bot?.aiConfigId || '',
-      flowConfigJson: bot?.flowConfig ? JSON.stringify(bot.flowConfig, null, 2) : '',
     },
   });
   const { createBot, updateBot } = useBotStore();
   const [saving, setSaving] = useState(false);
   const [aiConfigs, setAiConfigs] = useState<any[]>([]);
+  const [keywords, setKeywords] = useState<Keyword[]>([]);
+  const [menus, setMenus] = useState<InteractiveMenu[]>([]);
   const responseMode = watch('responseMode');
+
+  // Initial interaction state
+  const [initType, setInitType] = useState<GotoTarget['type'] | ''>(
+    bot?.flowConfig?.initialInteraction?.type || ''
+  );
+  const [initTarget, setInitTarget] = useState(
+    bot?.flowConfig?.initialInteraction?.target || ''
+  );
+
+  // Fallback state
+  const [fallbackMsg, setFallbackMsg] = useState(bot?.flowConfig?.fallback?.message || '');
+  const [fallbackGotoType, setFallbackGotoType] = useState<GotoTarget['type'] | ''>(
+    bot?.flowConfig?.fallback?.goto?.type || ''
+  );
+  const [fallbackGotoTarget, setFallbackGotoTarget] = useState(
+    bot?.flowConfig?.fallback?.goto?.target || ''
+  );
 
   useEffect(() => {
     reset({
       name: bot?.name || '',
       responseMode: bot?.responseMode || 'KEYWORDS',
       systemPrompt: bot?.systemPrompt || '',
-      initialMessage: bot?.initialMessage || '',
       aiConfigId: bot?.aiConfigId || '',
-      flowConfigJson: bot?.flowConfig ? JSON.stringify(bot.flowConfig, null, 2) : '',
     });
+    setInitType(bot?.flowConfig?.initialInteraction?.type || '');
+    setInitTarget(bot?.flowConfig?.initialInteraction?.target || '');
+    setFallbackMsg(bot?.flowConfig?.fallback?.message || '');
+    setFallbackGotoType(bot?.flowConfig?.fallback?.goto?.type || '');
+    setFallbackGotoTarget(bot?.flowConfig?.fallback?.goto?.target || '');
   }, [bot, reset]);
 
   useEffect(() => {
     if (open) {
       api.getAiConfigs().then(setAiConfigs).catch(() => setAiConfigs([]));
+      if (bot) {
+        api.getKeywords(bot.id).then(setKeywords).catch(() => setKeywords([]));
+        api.getMenus(bot.id).then(setMenus).catch(() => setMenus([]));
+      }
     }
-  }, [open]);
+  }, [open, bot]);
 
   const onSubmit = async (data: any) => {
     setSaving(true);
     try {
-      let parsedFlowConfig: FlowConfig | undefined = undefined;
-      if (data.flowConfigJson?.trim()) {
-        parsedFlowConfig = JSON.parse(data.flowConfigJson);
+      const flowConfig: FlowConfig = {};
+
+      if (initType && initTarget) {
+        flowConfig.initialInteraction = { type: initType, target: initTarget };
+      }
+
+      if (fallbackMsg.trim()) {
+        flowConfig.fallback = {
+          message: fallbackMsg.trim(),
+          goto: fallbackGotoType && fallbackGotoTarget
+            ? { type: fallbackGotoType, target: fallbackGotoTarget }
+            : undefined,
+        };
       }
 
       const payload = {
         name: data.name,
         responseMode: data.responseMode,
         systemPrompt: data.systemPrompt || undefined,
-        initialMessage: data.initialMessage || undefined,
+        initialMessage: undefined,
         aiConfigId: data.aiConfigId || null,
-        flowConfig: parsedFlowConfig,
+        flowConfig: Object.keys(flowConfig).length > 0 ? flowConfig : undefined,
       };
 
       if (bot) await updateBot(bot.id, payload);
       else await createBot(payload);
       onClose();
     } catch {
-      alert('flowConfig inválido. Informe um JSON válido.');
+      alert('Erro ao salvar bot.');
     } finally { setSaving(false); }
   };
 
   return (
-    <Modal open={open} onClose={onClose} title={bot ? 'Editar Bot' : 'Novo Bot'}>
+    <Modal open={open} onClose={onClose} title={bot ? 'Editar Bot' : 'Novo Bot'} wide>
       <form onSubmit={handleSubmit(onSubmit)}>
-        <FormField label="Nome do Bot" error={errors.name?.message}>
-          <input {...register('name', { required: 'Nome obrigatório' })} placeholder="Ex: Atendimento" className={inputClass} />
-        </FormField>
-        <FormField label="Modo de resposta">
-          <select {...register('responseMode')} className={inputClass}>
-            <option value="KEYWORDS">Keywords</option>
-            <option value="AI">I.A.</option>
-            <option value="HYBRID">Híbrido</option>
-          </select>
-        </FormField>
+        <div className="grid grid-cols-2 gap-4">
+          <FormField label="Nome do Bot" error={errors.name?.message}>
+            <input {...register('name', { required: 'Nome obrigatório' })} placeholder="Ex: Atendimento" className={inputClass} />
+          </FormField>
+          <FormField label="Modo de resposta">
+            <select {...register('responseMode')} className={inputClass}>
+              <option value="KEYWORDS">Keywords</option>
+              <option value="AI">I.A.</option>
+              <option value="HYBRID">Hibrido</option>
+            </select>
+          </FormField>
+        </div>
+
         {(responseMode === 'AI' || responseMode === 'HYBRID') && (
           <FormField label="Configuração de I.A.">
             <select {...register('aiConfigId')} className={inputClass}>
@@ -123,31 +213,55 @@ function BotFormModal({ open, onClose, bot }: { open: boolean; onClose: () => vo
                 </option>
               ))}
             </select>
-            <p className="text-xs text-[var(--color-text-muted)] mt-1.5">
-              Configure provedores em Configuração I.A. no menu lateral
-            </p>
           </FormField>
         )}
-        <FormField label="Primeira etapa (mensagem inicial)">
-          <textarea {...register('initialMessage')} placeholder="Ex: menu" rows={3} className={inputClass + ' resize-none'} />
-          <p className="text-xs text-[var(--color-text-muted)] mt-1.5">
-            Use uma interação inicial (ex: keyword que dispare um menu interativo). Evite saudações genéricas.
+
+        <div className="p-4 rounded-xl bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] mb-5">
+          <label className="text-sm font-medium text-[var(--color-text-primary)] mb-3 block flex items-center gap-2">
+            <ArrowRight className="w-4 h-4 text-[var(--color-accent)]" />
+            Primeira interação do bot
+          </label>
+          <p className="text-xs text-[var(--color-text-muted)] mb-3">
+            Escolha qual keyword ou menu interativo sera enviado quando o usuario iniciar a conversa.
           </p>
-        </FormField>
+          {bot ? (
+            <GotoSelector
+              gotoType={initType}
+              gotoTarget={initTarget}
+              onTypeChange={setInitType}
+              onTargetChange={setInitTarget}
+              keywords={keywords}
+              menus={menus}
+            />
+          ) : (
+            <p className="text-xs text-[var(--color-text-muted)] italic">
+              Salve o bot primeiro e depois configure a primeira interação (precisa ter keywords/menus criados).
+            </p>
+          )}
+        </div>
+
         <FormField label="System Prompt (IA)">
-          <textarea {...register('systemPrompt')} placeholder="Instruções para a IA..." rows={4} className={inputClass + ' resize-none'} />
+          <textarea {...register('systemPrompt')} placeholder="Instruções para a IA..." rows={3} className={inputClass + ' resize-none'} />
         </FormField>
-        <FormField label="Flow config (JSON)">
-          <textarea
-            {...register('flowConfigJson')}
-            placeholder={`{\n  "steps": [{ "type": "GOTO_MENU", "menuTrigger": "menu_principal" }],\n  "fallback": {\n    "message": "Desculpe, ocorreu um erro no fluxo.",\n    "goto": { "type": "MENU", "target": "menu_principal" }\n  }\n}`}
-            rows={8}
-            className={inputClass + ' resize-y font-mono text-xs'}
-          />
-          <p className="text-xs text-[var(--color-text-muted)] mt-1.5">
-            Defina um fluxo da primeira etapa (ex.: keyword {' > ' } menu interativo) com fallback e goto.
-          </p>
-        </FormField>
+
+        <div className="p-4 rounded-xl bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] mb-5">
+          <label className="text-sm font-medium text-[var(--color-text-secondary)] mb-3 block">Fallback (quando algo falha)</label>
+          <FormField label="Mensagem de fallback">
+            <input value={fallbackMsg} onChange={(e) => setFallbackMsg(e.target.value)} placeholder="Desculpe, ocorreu um erro..." className={inputClass} />
+          </FormField>
+          {bot && (
+            <GotoSelector
+              gotoType={fallbackGotoType}
+              gotoTarget={fallbackGotoTarget}
+              onTypeChange={setFallbackGotoType}
+              onTargetChange={setFallbackGotoTarget}
+              keywords={keywords}
+              menus={menus}
+              label="Goto após fallback"
+            />
+          )}
+        </div>
+
         <div className="flex justify-end gap-3 mt-7">
           <button type="button" onClick={onClose} className={btnSecondary}>Cancelar</button>
           <button type="submit" disabled={saving} className={btnPrimary}>
@@ -162,19 +276,31 @@ function BotFormModal({ open, onClose, bot }: { open: boolean; onClose: () => vo
 
 // ─── Keywords Modal ───
 function KeywordsModal({ open, onClose, bot }: { open: boolean; onClose: () => void; bot: Bot }) {
-  const [keywords, setKeywords] = useState<any[]>([]);
+  const [keywords, setKeywords] = useState<Keyword[]>([]);
+  const [menus, setMenus] = useState<InteractiveMenu[]>([]);
   const [loading, setLoading] = useState(true);
   const { register, handleSubmit, reset } = useForm({ defaultValues: { trigger: '', response: '', priority: 0 } });
 
+  // Goto state for new keyword
+  const [gotoType, setGotoType] = useState<GotoTarget['type'] | ''>('');
+  const [gotoTarget, setGotoTarget] = useState('');
+
   const load = async () => {
     setLoading(true);
-    try { setKeywords(await api.getKeywords(bot.id)); } catch {} finally { setLoading(false); }
+    try {
+      const [kws, mns] = await Promise.all([api.getKeywords(bot.id), api.getMenus(bot.id)]);
+      setKeywords(kws);
+      setMenus(mns);
+    } catch {} finally { setLoading(false); }
   };
   useEffect(() => { if (open) load(); }, [open]);
 
   const onAdd = async (data: any) => {
-    await api.createKeyword(bot.id, { ...data, priority: Number(data.priority) || 0 });
+    const goto = gotoType && gotoTarget ? { type: gotoType, target: gotoTarget } : undefined;
+    await api.createKeyword(bot.id, { ...data, priority: Number(data.priority) || 0, goto });
     reset();
+    setGotoType('');
+    setGotoTarget('');
     load();
   };
 
@@ -185,23 +311,46 @@ function KeywordsModal({ open, onClose, bot }: { open: boolean; onClose: () => v
 
   return (
     <Modal open={open} onClose={onClose} title={`Keywords - ${bot.name}`} wide>
-      <p className="text-xs text-[var(--color-text-muted)] mb-5">O matching de keywords é case-insensitive (maiúsculas/minúsculas não importam).</p>
-      <form onSubmit={handleSubmit(onAdd)} className="flex flex-col sm:flex-row gap-3 mb-6">
-        <input {...register('trigger', { required: true })} placeholder="Palavra-chave" className={inputClass + ' flex-1'} />
-        <input {...register('response', { required: true })} placeholder="Resposta do bot" className={inputClass + ' flex-1'} />
-        <button type="submit" className={btnPrimary + ' shrink-0 justify-center'}>
-          <Plus className="w-4 h-4" /> Adicionar
-        </button>
+      <p className="text-xs text-[var(--color-text-muted)] mb-5">
+        Matching case-insensitive. Use goto para direcionar o bot a outro fluxo após a resposta.
+      </p>
+      <form onSubmit={handleSubmit(onAdd)} className="space-y-3 mb-6">
+        <div className="flex gap-3">
+          <input {...register('trigger', { required: true })} placeholder="Palavra-chave" className={inputClass + ' flex-1'} />
+          <input {...register('response', { required: true })} placeholder="Resposta do bot" className={inputClass + ' flex-1'} />
+        </div>
+        <GotoSelector
+          gotoType={gotoType}
+          gotoTarget={gotoTarget}
+          onTypeChange={setGotoType}
+          onTargetChange={setGotoTarget}
+          keywords={keywords}
+          menus={menus}
+          label="Goto (navegação após resposta)"
+        />
+        <div className="flex justify-end">
+          <button type="submit" className={btnPrimary + ' shrink-0 justify-center'}>
+            <Plus className="w-4 h-4" /> Adicionar
+          </button>
+        </div>
       </form>
       <div className="space-y-2.5 max-h-[350px] overflow-y-auto">
         {loading ? <p className="text-sm text-[var(--color-text-muted)]">Carregando...</p> :
           keywords.length === 0 ? <p className="text-sm text-[var(--color-text-muted)] text-center py-8">Nenhuma keyword cadastrada.</p> :
           keywords.map((kw) => (
             <div key={kw.id} className="flex items-center justify-between p-4 rounded-xl bg-[var(--color-bg-tertiary)]">
-              <div className="flex items-center gap-3 flex-1 min-w-0">
-                <span className="text-sm font-semibold text-[var(--color-accent)] shrink-0">{kw.trigger}</span>
-                <span className="text-[var(--color-text-muted)] shrink-0">→</span>
-                <span className="text-sm text-[var(--color-text-secondary)] truncate">{kw.response}</span>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-semibold text-[var(--color-accent)] shrink-0">{kw.trigger}</span>
+                  <span className="text-[var(--color-text-muted)] shrink-0">→</span>
+                  <span className="text-sm text-[var(--color-text-secondary)] truncate">{kw.response}</span>
+                </div>
+                {kw.goto && (
+                  <div className="flex items-center gap-1.5 mt-1.5">
+                    <ArrowRight className="w-3 h-3 text-blue-400" />
+                    <span className="text-xs text-blue-400">goto {kw.goto.type.toLowerCase()}: {kw.goto.target}</span>
+                  </div>
+                )}
               </div>
               <button onClick={() => onDelete(kw.id)} className="text-red-400 hover:text-red-300 cursor-pointer ml-3 p-2 rounded-lg hover:bg-red-500/10 transition-all"><Trash2 className="w-4 h-4" /></button>
             </div>
@@ -215,7 +364,7 @@ function KeywordsModal({ open, onClose, bot }: { open: boolean; onClose: () => v
 // ─── Interactive Menus Modal ───
 function MenusModal({ open, onClose, bot }: { open: boolean; onClose: () => void; bot: Bot }) {
   const [menus, setMenus] = useState<InteractiveMenu[]>([]);
-  const [keywords, setKeywords] = useState<any[]>([]);
+  const [keywords, setKeywords] = useState<Keyword[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [editingMenuId, setEditingMenuId] = useState<string | null>(null);
@@ -250,12 +399,6 @@ function MenusModal({ open, onClose, bot }: { open: boolean; onClose: () => void
     } catch {} finally { setLoading(false); }
   };
   useEffect(() => { if (open) load(); }, [open]);
-
-  const currentGotoSuggestions = optGotoType === 'MENU'
-    ? menus.map((m) => m.trigger)
-    : optGotoType === 'KEYWORD'
-      ? keywords.map((k) => k.trigger)
-      : [];
 
   const addOption = () => {
     if (!optTitle.trim()) return;
@@ -320,7 +463,7 @@ function MenusModal({ open, onClose, bot }: { open: boolean; onClose: () => void
             <FormField label="Trigger (palavra-chave)">
               <input {...register('trigger', { required: true })} placeholder="Ex: menu, opções" className={inputClass} />
             </FormField>
-            <FormField label="Título do menu">
+            <FormField label="Titulo do menu">
               <input {...register('title', { required: true })} placeholder="Ex: Menu Principal" className={inputClass} />
             </FormField>
           </div>
@@ -336,25 +479,20 @@ function MenusModal({ open, onClose, bot }: { open: boolean; onClose: () => void
           <div className="mb-4">
             <label className="text-sm font-medium text-[var(--color-text-secondary)] mb-2 block">Opções do menu</label>
             <div className="grid grid-cols-5 gap-3 mb-3">
-              <input value={optTitle} onChange={(e) => setOptTitle(e.target.value)} placeholder="Título da opção" className={inputClass + ' col-span-2'} />
+              <input value={optTitle} onChange={(e) => setOptTitle(e.target.value)} placeholder="Titulo da opção" className={inputClass + ' col-span-2'} />
               <input value={optDesc} onChange={(e) => setOptDesc(e.target.value)} placeholder="Descrição (opcional)" className={inputClass + ' col-span-2'} />
               <button type="button" onClick={addOption} className={btnPrimary + ' shrink-0 justify-center'}><Plus className="w-4 h-4" /></button>
             </div>
-            <div className="grid grid-cols-2 gap-3 mb-2">
-              <select value={optGotoType} onChange={(e) => setOptGotoType(e.target.value as GotoTarget['type'] | '')} className={inputClass}>
-                <option value="">Sem goto</option>
-                <option value="MENU">Goto Menu</option>
-                <option value="KEYWORD">Goto Keyword</option>
-              </select>
-              <input value={optGotoTarget} list="goto-targets" onChange={(e) => setOptGotoTarget(e.target.value)} placeholder="Trigger destino (menu/keyword)" className={inputClass} />
-            </div>
-            <datalist id="goto-targets">
-              {currentGotoSuggestions.map((trigger) => (
-                <option key={trigger} value={trigger} />
-              ))}
-            </datalist>
-            <p className="text-xs text-[var(--color-text-muted)] mb-3">Sugestões de trigger carregadas de menus e keywords já cadastrados.</p>
-            <div className="space-y-2 max-h-[200px] overflow-y-auto">
+            <GotoSelector
+              gotoType={optGotoType}
+              gotoTarget={optGotoTarget}
+              onTypeChange={setOptGotoType}
+              onTargetChange={setOptGotoTarget}
+              keywords={keywords}
+              menus={menus}
+              label="Goto da opção (navegação após seleção)"
+            />
+            <div className="space-y-2 max-h-[200px] overflow-y-auto mt-3">
               {options.map((opt, i) => (
                 <div key={opt.id} className="flex items-center justify-between p-3 rounded-lg bg-[var(--color-bg-tertiary)]">
                   <span className="text-sm text-[var(--color-text-primary)]">
@@ -453,7 +591,7 @@ function WhatsAppModal({ open, onClose, bot }: { open: boolean; onClose: () => v
         </div>
       ) : (
         <form onSubmit={handleSubmit(onSubmit)}>
-          <FormField label="Número WhatsApp" error={errors.phoneNumber?.message}>
+          <FormField label="Numero WhatsApp" error={errors.phoneNumber?.message}>
             <div className="relative">
               <div className="absolute left-0 top-0 bottom-0 w-12 flex items-center justify-center pointer-events-none">
                 <Phone className="w-[18px] h-[18px] text-[var(--color-text-muted)]" />
@@ -479,6 +617,235 @@ function WhatsAppModal({ open, onClose, bot }: { open: boolean; onClose: () => v
   );
 }
 
+// ─── Flow Tree Visualization ───
+interface TreeNode {
+  id: string;
+  label: string;
+  type: 'initial' | 'keyword' | 'menu' | 'option' | 'fallback';
+  children: TreeNode[];
+  gotoLabel?: string;
+}
+
+function buildFlowTree(bot: Bot, keywords: Keyword[], menus: InteractiveMenu[]): TreeNode {
+  const visited = new Set<string>();
+
+  const resolveGoto = (goto: GotoTarget, depth: number): TreeNode | null => {
+    if (depth > 5) return null; // prevenir loops infinitos
+    const key = `${goto.type}:${goto.target}`;
+    if (visited.has(key)) return { id: key + '_loop', label: `${goto.target} (loop)`, type: goto.type === 'MENU' ? 'menu' : 'keyword', children: [] };
+    visited.add(key);
+
+    if (goto.type === 'MENU') {
+      const menu = menus.find(m => m.trigger.toLowerCase() === goto.target.toLowerCase());
+      if (!menu) return { id: `menu_missing_${goto.target}`, label: `Menu: ${goto.target} (não encontrado)`, type: 'menu', children: [] };
+
+      const menuNode: TreeNode = {
+        id: `menu_${menu.id}`,
+        label: `Menu: ${menu.title}`,
+        type: 'menu',
+        children: (menu.options || []).map(opt => {
+          const optNode: TreeNode = {
+            id: `opt_${opt.id}`,
+            label: opt.title,
+            type: 'option',
+            children: [],
+            gotoLabel: opt.goto ? `→ ${opt.goto.type.toLowerCase()}: ${opt.goto.target}` : undefined,
+          };
+          if (opt.goto) {
+            const child = resolveGoto(opt.goto, depth + 1);
+            if (child) optNode.children.push(child);
+          }
+          return optNode;
+        }),
+      };
+      return menuNode;
+    }
+
+    if (goto.type === 'KEYWORD') {
+      const kw = keywords.find(k => k.trigger.toLowerCase() === goto.target.toLowerCase());
+      if (!kw) return { id: `kw_missing_${goto.target}`, label: `Keyword: ${goto.target} (não encontrada)`, type: 'keyword', children: [] };
+
+      const kwNode: TreeNode = {
+        id: `kw_${kw.id}`,
+        label: `Keyword: ${kw.trigger}`,
+        type: 'keyword',
+        children: [],
+        gotoLabel: kw.goto ? `→ ${kw.goto.type.toLowerCase()}: ${kw.goto.target}` : undefined,
+      };
+      if (kw.goto) {
+        const child = resolveGoto(kw.goto, depth + 1);
+        if (child) kwNode.children.push(child);
+      }
+      return kwNode;
+    }
+
+    return null;
+  };
+
+  const root: TreeNode = {
+    id: 'root',
+    label: bot.name,
+    type: 'initial',
+    children: [],
+  };
+
+  // Interação inicial
+  const flow = bot.flowConfig;
+  if (flow?.initialInteraction) {
+    const initNode = resolveGoto(flow.initialInteraction, 0);
+    if (initNode) root.children.push(initNode);
+  }
+
+  // Keywords sem goto que são "folhas" independentes
+  const referencedKeywords = new Set<string>();
+  const referencedMenus = new Set<string>();
+
+  // Coletar todas as referências
+  if (flow?.initialInteraction) {
+    if (flow.initialInteraction.type === 'KEYWORD') referencedKeywords.add(flow.initialInteraction.target.toLowerCase());
+    if (flow.initialInteraction.type === 'MENU') referencedMenus.add(flow.initialInteraction.target.toLowerCase());
+  }
+  for (const kw of keywords) {
+    if (kw.goto) {
+      if (kw.goto.type === 'KEYWORD') referencedKeywords.add(kw.goto.target.toLowerCase());
+      if (kw.goto.type === 'MENU') referencedMenus.add(kw.goto.target.toLowerCase());
+    }
+  }
+  for (const menu of menus) {
+    for (const opt of (menu.options || [])) {
+      if (opt.goto) {
+        if (opt.goto.type === 'KEYWORD') referencedKeywords.add(opt.goto.target.toLowerCase());
+        if (opt.goto.type === 'MENU') referencedMenus.add(opt.goto.target.toLowerCase());
+      }
+    }
+  }
+
+  // Adicionar keywords não referenciadas como nós independentes
+  for (const kw of keywords) {
+    if (!referencedKeywords.has(kw.trigger.toLowerCase()) && kw.isActive) {
+      visited.clear();
+      const kwNode: TreeNode = {
+        id: `standalone_kw_${kw.id}`,
+        label: `Keyword: ${kw.trigger}`,
+        type: 'keyword',
+        children: [],
+        gotoLabel: kw.goto ? `→ ${kw.goto.type.toLowerCase()}: ${kw.goto.target}` : undefined,
+      };
+      if (kw.goto) {
+        const child = resolveGoto(kw.goto, 0);
+        if (child) kwNode.children.push(child);
+      }
+      root.children.push(kwNode);
+    }
+  }
+
+  // Adicionar menus não referenciados como nós independentes
+  for (const menu of menus) {
+    if (!referencedMenus.has(menu.trigger.toLowerCase()) && menu.isActive) {
+      visited.clear();
+      const menuNode = resolveGoto({ type: 'MENU', target: menu.trigger }, 0);
+      if (menuNode) root.children.push(menuNode);
+    }
+  }
+
+  // Fallback
+  if (flow?.fallback) {
+    const fbNode: TreeNode = {
+      id: 'fallback',
+      label: `Fallback: ${flow.fallback.message.substring(0, 40)}${flow.fallback.message.length > 40 ? '...' : ''}`,
+      type: 'fallback',
+      children: [],
+    };
+    if (flow.fallback.goto) {
+      visited.clear();
+      const child = resolveGoto(flow.fallback.goto, 0);
+      if (child) fbNode.children.push(child);
+    }
+    root.children.push(fbNode);
+  }
+
+  return root;
+}
+
+function TreeNodeView({ node, depth = 0 }: { node: TreeNode; depth?: number }) {
+  const colors: Record<TreeNode['type'], string> = {
+    initial: 'text-[var(--color-accent)] bg-[var(--color-accent-glow)]',
+    keyword: 'text-emerald-400 bg-emerald-500/10',
+    menu: 'text-purple-400 bg-purple-500/10',
+    option: 'text-blue-400 bg-blue-500/10',
+    fallback: 'text-orange-400 bg-orange-500/10',
+  };
+
+  const icons: Record<TreeNode['type'], React.ReactNode> = {
+    initial: <BotIcon className="w-3.5 h-3.5" />,
+    keyword: <Key className="w-3.5 h-3.5" />,
+    menu: <List className="w-3.5 h-3.5" />,
+    option: <ChevronRight className="w-3.5 h-3.5" />,
+    fallback: <ArrowRight className="w-3.5 h-3.5" />,
+  };
+
+  return (
+    <div className={depth > 0 ? 'ml-5 border-l border-[var(--color-border)] pl-3' : ''}>
+      <div className="flex items-center gap-2 py-1.5">
+        <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-medium ${colors[node.type]}`}>
+          {icons[node.type]}
+          {node.label}
+        </span>
+        {node.gotoLabel && (
+          <span className="text-[10px] text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded">
+            {node.gotoLabel}
+          </span>
+        )}
+      </div>
+      {node.children.map((child) => (
+        <TreeNodeView key={child.id} node={child} depth={depth + 1} />
+      ))}
+    </div>
+  );
+}
+
+function FlowTreeModal({ open, onClose, bot }: { open: boolean; onClose: () => void; bot: Bot }) {
+  const [keywords, setKeywords] = useState<Keyword[]>([]);
+  const [menus, setMenus] = useState<InteractiveMenu[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (open) {
+      setLoading(true);
+      Promise.all([api.getKeywords(bot.id), api.getMenus(bot.id)])
+        .then(([kws, mns]) => { setKeywords(kws); setMenus(mns); })
+        .catch(() => {})
+        .finally(() => setLoading(false));
+    }
+  }, [open, bot.id]);
+
+  const tree = useMemo(() => {
+    if (loading) return null;
+    return buildFlowTree(bot, keywords, menus);
+  }, [bot, keywords, menus, loading]);
+
+  return (
+    <Modal open={open} onClose={onClose} title={`Arvore do Fluxo - ${bot.name}`} wide>
+      {loading ? (
+        <div className="flex items-center justify-center py-12 text-[var(--color-text-muted)]">
+          <Loader2 className="w-5 h-5 animate-spin mr-2" /> Carregando...
+        </div>
+      ) : tree && tree.children.length > 0 ? (
+        <div className="max-h-[500px] overflow-y-auto">
+          <TreeNodeView node={tree} />
+        </div>
+      ) : (
+        <div className="text-center py-12">
+          <GitBranch className="w-10 h-10 text-[var(--color-text-muted)] mx-auto mb-3" />
+          <p className="text-sm text-[var(--color-text-muted)]">
+            Nenhum fluxo configurado. Adicione keywords, menus e configure a primeira interação.
+          </p>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
 // ─── WhatsApp Emulator ───
 interface EmulatorMessage {
   id: string;
@@ -494,16 +861,19 @@ function WhatsAppEmulator({ open, onClose, bot }: { open: boolean; onClose: () =
   const [messages, setMessages] = useState<EmulatorMessage[]>([]);
   const [input, setInput] = useState('');
   const [typing, setTyping] = useState(false);
-  const [keywords, setKeywords] = useState<any[]>([]);
+  const [keywords, setKeywords] = useState<Keyword[]>([]);
   const [menus, setMenus] = useState<InteractiveMenu[]>([]);
+  const [initialized, setInitialized] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (open) {
       setMessages([]);
       setInput('');
-      api.getKeywords(bot.id).then(setKeywords).catch(() => setKeywords([]));
-      api.getMenus(bot.id).then(setMenus).catch(() => setMenus([]));
+      setInitialized(false);
+      Promise.all([api.getKeywords(bot.id), api.getMenus(bot.id)])
+        .then(([kws, mns]) => { setKeywords(kws); setMenus(mns); })
+        .catch(() => { setKeywords([]); setMenus([]); });
     }
   }, [open, bot.id]);
 
@@ -516,6 +886,11 @@ function WhatsAppEmulator({ open, onClose, bot }: { open: boolean; onClose: () =
     return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
   };
 
+  const findMenuByTrigger = (trigger: string): InteractiveMenu | null => {
+    const normalized = trigger.toLowerCase().trim();
+    return menus.find(m => m.isActive !== false && m.trigger.toLowerCase() === normalized) || null;
+  };
+
   const findMenuMatch = (text: string): InteractiveMenu | null => {
     const normalized = text.toLowerCase().trim();
     for (const menu of menus) {
@@ -526,12 +901,17 @@ function WhatsAppEmulator({ open, onClose, bot }: { open: boolean; onClose: () =
     return null;
   };
 
-  const findKeywordMatch = (text: string): string | null => {
+  const findKeywordByTrigger = (trigger: string): Keyword | null => {
+    const normalized = trigger.toLowerCase().trim();
+    return keywords.find(k => k.isActive !== false && k.trigger.toLowerCase() === normalized) || null;
+  };
+
+  const findKeywordMatch = (text: string): Keyword | null => {
     const normalized = text.toLowerCase().trim();
     const sorted = [...keywords].sort((a, b) => (b.priority || 0) - (a.priority || 0));
     for (const kw of sorted) {
       if (kw.isActive !== false && normalized.includes(kw.trigger.toLowerCase())) {
-        return kw.response;
+        return kw;
       }
     }
     return null;
@@ -551,10 +931,52 @@ function WhatsAppEmulator({ open, onClose, bot }: { open: boolean; onClose: () =
     return `Entendi sua mensagem. Sou o assistente ${bot.name} e estou aqui para ajudar. Pode me contar mais detalhes sobre o que precisa?`;
   };
 
+  const addBotMessage = (text: string, isMenu?: boolean, menuOptions?: MenuOption[]) => {
+    const botMsg: EmulatorMessage = {
+      id: (Date.now() + Math.random()).toString(),
+      text,
+      direction: 'incoming',
+      time: now(),
+      isMenu,
+      menuOptions,
+    };
+    setMessages((prev) => [...prev, botMsg]);
+    return botMsg;
+  };
+
+  const executeGoto = (goto: GotoTarget, depth = 0) => {
+    if (depth > 5) return;
+
+    setTimeout(() => {
+      if (goto.type === 'MENU') {
+        const menu = findMenuByTrigger(goto.target);
+        if (menu) {
+          const text = `📋 ${menu.title}\n${menu.body || ''}\n\n${(menu.options || []).map((o, i) => `${i + 1}. ${o.title}${o.description ? ' - ' + o.description : ''}`).join('\n')}${menu.footer ? '\n\n' + menu.footer : ''}`;
+          addBotMessage(text, true, menu.options);
+        } else {
+          addBotMessage(`Menu "${goto.target}" não encontrado.`);
+        }
+      } else if (goto.type === 'KEYWORD') {
+        const kw = findKeywordByTrigger(goto.target);
+        if (kw) {
+          addBotMessage(kw.response);
+          if (kw.goto) {
+            executeGoto(kw.goto, depth + 1);
+          }
+        } else {
+          addBotMessage(`Keyword "${goto.target}" não encontrada.`);
+        }
+      }
+    }, 400 + depth * 300);
+  };
+
   const sendMessage = async (text?: string) => {
     const msgText = text || input.trim();
     if (!msgText) return;
     if (!text) setInput('');
+
+    const isFirst = !initialized;
+    setInitialized(true);
 
     const userMsg: EmulatorMessage = {
       id: Date.now().toString(),
@@ -578,42 +1000,57 @@ function WhatsAppEmulator({ open, onClose, bot }: { open: boolean; onClose: () =
     setTimeout(() => {
       setTyping(false);
 
-      // Check menus first
-      const menuMatch = findMenuMatch(msgText);
-      if (menuMatch) {
-        const botMsg: EmulatorMessage = {
-          id: (Date.now() + 1).toString(),
-          text: `📋 ${menuMatch.title}\n${menuMatch.body || ''}\n\n${(menuMatch.options || []).map((o, i) => `${i + 1}. ${o.title}${o.description ? ' - ' + o.description : ''}`).join('\n')}${menuMatch.footer ? '\n\n' + menuMatch.footer : ''}`,
-          direction: 'incoming',
-          time: now(),
-          isMenu: true,
-          menuOptions: menuMatch.options,
-        };
-        setMessages((prev) => [...prev, botMsg]);
+      // Primeira interação: usar initialInteraction se configurado
+      if (isFirst && bot.flowConfig?.initialInteraction) {
+        executeGoto(bot.flowConfig.initialInteraction);
         return;
       }
 
-      let response: string;
-      if (bot.responseMode === 'KEYWORDS' || bot.responseMode === 'HYBRID') {
-        const match = findKeywordMatch(msgText);
-        if (match) {
-          response = match;
-        } else if (bot.responseMode === 'HYBRID') {
-          response = generateAIResponse(msgText);
-        } else {
-          response = 'Desculpe, não entendi. Tente reformular sua pergunta.';
-        }
-      } else {
-        response = generateAIResponse(msgText);
+      // Check menus first
+      const menuMatch = findMenuMatch(msgText);
+      if (menuMatch) {
+        const text = `📋 ${menuMatch.title}\n${menuMatch.body || ''}\n\n${(menuMatch.options || []).map((o, i) => `${i + 1}. ${o.title}${o.description ? ' - ' + o.description : ''}`).join('\n')}${menuMatch.footer ? '\n\n' + menuMatch.footer : ''}`;
+        addBotMessage(text, true, menuMatch.options);
+        return;
       }
 
-      const botMsg: EmulatorMessage = {
-        id: (Date.now() + 1).toString(),
-        text: response,
-        direction: 'incoming',
-        time: now(),
-      };
-      setMessages((prev) => [...prev, botMsg]);
+      // Check if it's a menu option selection (from any menu)
+      for (const menu of menus) {
+        const opt = (menu.options || []).find(o =>
+          o.title.toLowerCase() === msgText.toLowerCase() ||
+          o.id.toLowerCase() === msgText.toLowerCase()
+        );
+        if (opt) {
+          if (opt.goto) {
+            addBotMessage(`Você selecionou: ${opt.title}`);
+            executeGoto(opt.goto);
+          } else {
+            addBotMessage(`Você selecionou: ${opt.title}${opt.description ? '\n' + opt.description : ''}`);
+          }
+          return;
+        }
+      }
+
+      // Keyword match with goto support
+      if (bot.responseMode === 'KEYWORDS' || bot.responseMode === 'HYBRID') {
+        const kwMatch = findKeywordMatch(msgText);
+        if (kwMatch) {
+          addBotMessage(kwMatch.response);
+          if (kwMatch.goto) {
+            executeGoto(kwMatch.goto);
+          }
+          return;
+        }
+        if (bot.responseMode === 'HYBRID') {
+          addBotMessage(generateAIResponse(msgText));
+          return;
+        }
+        addBotMessage('Desculpe, não entendi. Tente reformular sua pergunta.');
+        return;
+      }
+
+      // AI mode
+      addBotMessage(generateAIResponse(msgText));
     }, delay);
   };
 
@@ -646,6 +1083,11 @@ function WhatsAppEmulator({ open, onClose, bot }: { open: boolean; onClose: () =
               </div>
               <p className="text-[#8696a0] text-sm mb-1">Emulador WhatsApp</p>
               <p className="text-[#667781] text-xs">Envie uma mensagem para simular uma conversa com o bot <strong className="text-[#8696a0]">{bot.name}</strong></p>
+              {bot.flowConfig?.initialInteraction && (
+                <div className="mt-3 px-3 py-2 rounded-lg bg-[#202c33] text-[#667781] text-[11px]">
+                  Primeira interação: {bot.flowConfig.initialInteraction.type.toLowerCase()} → {bot.flowConfig.initialInteraction.target}
+                </div>
+              )}
               <div className="flex gap-2 mt-3">
                 {bot.responseMode !== 'AI' && (
                   <span className="text-[#667781] text-[11px] bg-[#202c33] px-3 py-1.5 rounded-lg">
@@ -666,13 +1108,14 @@ function WhatsAppEmulator({ open, onClose, bot }: { open: boolean; onClose: () =
                 {/* Interactive menu buttons */}
                 {msg.isMenu && msg.menuOptions && (
                   <div className="mt-2 space-y-1.5">
-                    {msg.menuOptions.map((opt, i) => (
+                    {msg.menuOptions.map((opt) => (
                       <button
                         key={opt.id}
                         onClick={() => sendMessage(opt.title)}
                         className="w-full text-left px-3 py-2 rounded-lg bg-[#005c4b]/40 hover:bg-[#005c4b]/70 text-[#25d366] text-xs font-medium transition-colors cursor-pointer border border-[#25d366]/20"
                       >
                         {opt.title}
+                        {opt.goto && <span className="text-[#25d366]/60 ml-1 text-[10px]">→</span>}
                       </button>
                     ))}
                   </div>
@@ -728,28 +1171,29 @@ function WhatsAppEmulator({ open, onClose, bot }: { open: boolean; onClose: () =
   );
 }
 
-
-
+// ─── Flow Preview (compact) ───
 function buildFlowPreview(bot: Bot): string[] {
   const preview: string[] = [];
+  const flow = bot.flowConfig;
 
-  if (bot.initialMessage?.trim()) {
-    preview.push(`primeira etapa: ${bot.initialMessage.trim()}`);
+  if (flow?.initialInteraction) {
+    preview.push(`inicio → ${flow.initialInteraction.type.toLowerCase()}: ${flow.initialInteraction.target}`);
+  } else if (bot.initialMessage?.trim()) {
+    preview.push(`inicio: ${bot.initialMessage.trim()}`);
   }
 
-  const steps = bot.flowConfig?.steps || [];
+  const steps = flow?.steps || [];
   for (const step of steps) {
     if (step.type === 'GOTO_MENU' && step.menuTrigger) {
-      preview.push(`goto menu interativo: ${step.menuTrigger}`);
+      preview.push(`goto menu: ${step.menuTrigger}`);
     }
     if (step.type === 'GOTO_KEYWORD' && step.keywordTrigger) {
       preview.push(`goto keyword: ${step.keywordTrigger}`);
     }
   }
 
-  const fallback = bot.flowConfig?.fallback;
-  if (fallback?.goto) {
-    preview.push(`fallback → ${fallback.goto.type.toLowerCase()}: ${fallback.goto.target}`);
+  if (flow?.fallback?.goto) {
+    preview.push(`fallback → ${flow.fallback.goto.type.toLowerCase()}: ${flow.fallback.goto.target}`);
   }
 
   return preview;
@@ -764,6 +1208,7 @@ export default function BotsPage() {
   const [menuBot, setMenuBot] = useState<Bot | null>(null);
   const [waBot, setWaBot] = useState<Bot | null>(null);
   const [emulatorBot, setEmulatorBot] = useState<Bot | null>(null);
+  const [treeBot, setTreeBot] = useState<Bot | null>(null);
 
   useEffect(() => { fetchBots(); }, [fetchBots]);
 
@@ -821,6 +1266,9 @@ export default function BotsPage() {
                   <button onClick={() => setEmulatorBot(bot)} className="p-2.5 rounded-lg hover:bg-[var(--color-bg-hover)] text-[var(--color-text-muted)] hover:text-[var(--color-accent)] transition-all cursor-pointer" title="Testar Bot">
                     <Play className="w-4 h-4" />
                   </button>
+                  <button onClick={() => setTreeBot(bot)} className="p-2.5 rounded-lg hover:bg-[var(--color-bg-hover)] text-[var(--color-text-muted)] hover:text-purple-400 transition-all cursor-pointer" title="Arvore do Fluxo">
+                    <GitBranch className="w-4 h-4" />
+                  </button>
                   <button onClick={() => toggleActive(bot)} className="p-2.5 rounded-lg hover:bg-[var(--color-bg-hover)] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-all cursor-pointer" title={bot.isActive ? 'Desativar' : 'Ativar'}>
                     {bot.isActive ? <Power className="w-4 h-4 text-green-400" /> : <PowerOff className="w-4 h-4" />}
                   </button>
@@ -849,7 +1297,9 @@ export default function BotsPage() {
 
               {buildFlowPreview(bot).length > 0 && (
                 <div className="mt-4 p-3 rounded-xl bg-[var(--color-bg-tertiary)] border border-[var(--color-border)]">
-                  <p className="text-xs font-medium text-[var(--color-text-secondary)] mb-2">Visualização do fluxo</p>
+                  <p className="text-xs font-medium text-[var(--color-text-secondary)] mb-2 flex items-center gap-1.5">
+                    <GitBranch className="w-3.5 h-3.5" /> Fluxo
+                  </p>
                   <p className="text-xs text-[var(--color-text-muted)] break-words">
                     {buildFlowPreview(bot).join(' > ')}
                   </p>
@@ -865,6 +1315,7 @@ export default function BotsPage() {
       {menuBot && <MenusModal open={!!menuBot} onClose={() => setMenuBot(null)} bot={menuBot} />}
       {waBot && <WhatsAppModal open={!!waBot} onClose={() => setWaBot(null)} bot={waBot} />}
       {emulatorBot && <WhatsAppEmulator open={!!emulatorBot} onClose={() => setEmulatorBot(null)} bot={emulatorBot} />}
+      {treeBot && <FlowTreeModal open={!!treeBot} onClose={() => setTreeBot(null)} bot={treeBot} />}
     </div>
   );
 }

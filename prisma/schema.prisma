@@ -136,6 +136,7 @@ model Keyword {
   response  String   @db.Text // Resposta fixa
   priority  Int      @default(0)
   isActive  Boolean  @default(true)
+  goto      Json?    // { type: 'MENU' | 'KEYWORD', target: string } - navegação após resposta
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

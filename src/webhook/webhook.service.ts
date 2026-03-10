@@ -16,8 +16,9 @@ type GotoConfig = {
 };
 
 type FlowStep = {
-  type: 'GOTO_MENU';
-  menuTrigger: string;
+  type: 'GOTO_MENU' | 'GOTO_KEYWORD';
+  menuTrigger?: string;
+  keywordTrigger?: string;
 };
 
 type FlowConfig = {
@@ -199,12 +200,32 @@ export class WebhookService {
 
     try {
       if (step.type === 'GOTO_MENU') {
+        if (!step.menuTrigger) throw new Error('GOTO_MENU sem menuTrigger configurado');
+
         await this.sendMenu(
           bot.id,
           bot.whatsappChannel.dialog360ApiKey,
           from,
           conversation.id,
           step.menuTrigger,
+        );
+
+        await this.prisma.conversation.update({
+          where: { id: conversation.id },
+          data: { flowStepIndex: conversation.flowStepIndex + 1 },
+        });
+        return true;
+      }
+
+      if (step.type === 'GOTO_KEYWORD') {
+        if (!step.keywordTrigger) throw new Error('GOTO_KEYWORD sem keywordTrigger configurado');
+
+        await this.executeGoto(
+          bot.id,
+          bot.whatsappChannel.dialog360ApiKey,
+          from,
+          conversation.id,
+          { type: 'KEYWORD', target: step.keywordTrigger },
         );
 
         await this.prisma.conversation.update({

@@ -248,12 +248,27 @@ export class WebhookService {
         contactName,
       );
 
+      const conversationMessagesCount = await this.prisma.message.count({
+        where: { conversationId: conversation.id },
+      });
+      const isFirstInteraction = conversationMessagesCount === 0;
+
       await this.conversationService.saveMessage(
         conversation.id,
         'INBOUND',
         text,
         messageId,
       );
+
+      if (isFirstInteraction && bot.initialMessage) {
+        const initialResult = await this.dialog360.sendTextMessage(apiKey, from, bot.initialMessage);
+        await this.conversationService.saveMessage(
+          conversation.id,
+          'OUTBOUND',
+          bot.initialMessage,
+          initialResult?.messages?.[0]?.id,
+        );
+      }
 
       const handledByFlow = await this.processConfiguredFlowStep(bot, from, conversation);
       if (handledByFlow) return;

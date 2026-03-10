@@ -16,6 +16,10 @@ export class CreateBotDto {
 
   @IsString()
   @IsOptional()
+  initialMessage?: string;
+
+  @IsString()
+  @IsOptional()
   systemPrompt?: string;
 
   @IsString()
@@ -39,6 +43,10 @@ export class UpdateBotDto {
   @IsBoolean()
   @IsOptional()
   isActive?: boolean;
+
+  @IsString()
+  @IsOptional()
+  initialMessage?: string;
 
   @IsString()
   @IsOptional()

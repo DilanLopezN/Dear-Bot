@@ -1,12 +1,15 @@
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;500&family=Outfit:wght@500;600;700;800&display=swap');
 @import "tailwindcss";
 
-:root {
+/* ── Dark theme (default) ── */
+:root,
+[data-theme="dark"] {
   --color-bg-primary: #050505;
   --color-bg-secondary: #0a0a0a;
   --color-bg-tertiary: #111111;
   --color-bg-card: #0d0d0d;
   --color-bg-hover: #161616;
+  --color-bg-input: #111111;
   --color-border: #1e1e1e;
   --color-border-light: #2a2a2a;
   --color-text-primary: #e8e8e8;
@@ -18,9 +21,32 @@
   --color-success: #22c55e;
   --color-warning: #f59e0b;
   --color-danger: #ef4444;
+  --color-shadow: rgba(0, 0, 0, 0.4);
   --font-display: "Outfit", sans-serif;
   --font-body: "DM Sans", sans-serif;
   --font-mono: "JetBrains Mono", monospace;
+}
+
+/* ── Light theme ── */
+[data-theme="light"] {
+  --color-bg-primary: #f8f9fb;
+  --color-bg-secondary: #ffffff;
+  --color-bg-tertiary: #f0f2f5;
+  --color-bg-card: #ffffff;
+  --color-bg-hover: #f0f2f5;
+  --color-bg-input: #f0f2f5;
+  --color-border: #e2e5e9;
+  --color-border-light: #d0d4da;
+  --color-text-primary: #111827;
+  --color-text-secondary: #6b7280;
+  --color-text-muted: #9ca3af;
+  --color-accent: #16a34a;
+  --color-accent-hover: #15803d;
+  --color-accent-glow: rgba(22, 163, 74, 0.1);
+  --color-success: #16a34a;
+  --color-warning: #d97706;
+  --color-danger: #dc2626;
+  --color-shadow: rgba(0, 0, 0, 0.08);
 }
 
 * {
@@ -35,6 +61,7 @@ body {
   color: var(--color-text-primary);
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
+  transition: background 0.2s ease, color 0.2s ease;
 }
 
 input,

@@ -1,6 +1,5 @@
 import axios, { AxiosInstance } from 'axios';
 
-
 export interface DashboardOverview {
   totals: {
     totalBots: number;
@@ -11,6 +10,43 @@ export interface DashboardOverview {
   };
   dailyMetrics: Array<{ name: string; mensagens: number; conversas: number }>;
   recentBots: any[];
+}
+
+export interface ReportsAnalytics {
+  botStats: Array<{ name: string; conversas: number; mensagens: number }>;
+  modeDistribution: Array<{ name: string; value: number }>;
+  totals: {
+    totalBots: number;
+    totalConversas: number;
+    totalMensagens: number;
+    mediaMsgPorBot: number;
+  };
+}
+
+export interface MonthlyMetric {
+  date: string;
+  mensagens: number;
+  conversas: number;
+  inbound: number;
+  outbound: number;
+}
+
+export interface MenuOption {
+  id: string;
+  title: string;
+  description?: string;
+}
+
+export interface InteractiveMenu {
+  id: string;
+  botId: string;
+  trigger: string;
+  title: string;
+  body?: string;
+  footer?: string;
+  options: MenuOption[];
+  isActive: boolean;
+  createdAt: string;
 }
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
@@ -103,6 +139,27 @@ class ApiService {
     return data;
   }
 
+  // Interactive Menus
+  async getMenus(botId: string): Promise<InteractiveMenu[]> {
+    const { data } = await this.client.get(`/bots/${botId}/menus`);
+    return data;
+  }
+
+  async createMenu(botId: string, payload: { trigger: string; title: string; body?: string; footer?: string; options: MenuOption[] }) {
+    const { data } = await this.client.post(`/bots/${botId}/menus`, payload);
+    return data;
+  }
+
+  async updateMenu(botId: string, menuId: string, payload: Record<string, unknown>) {
+    const { data } = await this.client.put(`/bots/${botId}/menus/${menuId}`, payload);
+    return data;
+  }
+
+  async deleteMenu(botId: string, menuId: string) {
+    const { data } = await this.client.delete(`/bots/${botId}/menus/${menuId}`);
+    return data;
+  }
+
   // WhatsApp Channel
   async getWhatsappChannel(botId: string) {
     const bot = await this.getBot(botId);
@@ -124,12 +181,23 @@ class ApiService {
     return data;
   }
 
-  // Conversations
+  // Dashboard & Analytics
   async getDashboardOverview(): Promise<DashboardOverview> {
     const { data } = await this.client.get('/bots/dashboard/overview');
     return data;
   }
 
+  async getReportsAnalytics(): Promise<ReportsAnalytics> {
+    const { data } = await this.client.get('/bots/reports/analytics');
+    return data;
+  }
+
+  async getMonthlyMetrics(): Promise<MonthlyMetric[]> {
+    const { data } = await this.client.get('/bots/reports/monthly');
+    return data;
+  }
+
+  // Conversations
   async getConversations(botId: string) {
     const { data } = await this.client.get(`/bots/${botId}/conversations`);
     return data;

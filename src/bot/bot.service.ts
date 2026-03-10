@@ -95,6 +95,98 @@ export class BotService {
     };
   }
 
+  /** Analytics: per-bot stats with real data from DB */
+  async getReportsAnalytics(userId: string) {
+    const bots = await this.prisma.bot.findMany({
+      where: { userId },
+      include: {
+        _count: { select: { conversations: true, keywords: true } },
+      },
+    });
+
+    const botStats = await Promise.all(
+      bots.map(async (bot) => {
+        const messageCount = await this.prisma.message.count({
+          where: { conversation: { botId: bot.id } },
+        });
+        return {
+          name: bot.name.length > 14 ? bot.name.slice(0, 14) + '…' : bot.name,
+          conversas: bot._count.conversations,
+          mensagens: messageCount,
+        };
+      }),
+    );
+
+    // Mode distribution
+    const modes: Record<string, number> = {};
+    bots.forEach((bot) => {
+      modes[bot.responseMode] = (modes[bot.responseMode] || 0) + 1;
+    });
+    const modeDistribution = Object.entries(modes).map(([name, value]) => ({ name, value }));
+
+    // Totals
+    const totalConversas = botStats.reduce((a, b) => a + b.conversas, 0);
+    const totalMensagens = botStats.reduce((a, b) => a + b.mensagens, 0);
+
+    return {
+      botStats,
+      modeDistribution,
+      totals: {
+        totalBots: bots.length,
+        totalConversas,
+        totalMensagens,
+        mediaMsgPorBot: bots.length ? Math.round(totalMensagens / bots.length) : 0,
+      },
+    };
+  }
+
+  /** Analytics: monthly metrics for the last 30 days */
+  async getMonthlyMetrics(userId: string) {
+    const monthStart = new Date();
+    monthStart.setHours(0, 0, 0, 0);
+    monthStart.setDate(monthStart.getDate() - 29);
+
+    const [messages, conversations] = await Promise.all([
+      this.prisma.message.findMany({
+        where: { conversation: { bot: { userId } }, createdAt: { gte: monthStart } },
+        select: { createdAt: true, direction: true },
+      }),
+      this.prisma.conversation.findMany({
+        where: { bot: { userId }, createdAt: { gte: monthStart } },
+        select: { createdAt: true },
+      }),
+    ]);
+
+    const dayMap = new Map<string, { mensagens: number; conversas: number; inbound: number; outbound: number }>();
+    for (let i = 0; i < 30; i++) {
+      const date = new Date(monthStart);
+      date.setDate(monthStart.getDate() + i);
+      const key = date.toISOString().slice(0, 10);
+      dayMap.set(key, { mensagens: 0, conversas: 0, inbound: 0, outbound: 0 });
+    }
+
+    messages.forEach(({ createdAt, direction }) => {
+      const key = createdAt.toISOString().slice(0, 10);
+      const slot = dayMap.get(key);
+      if (slot) {
+        slot.mensagens += 1;
+        if (direction === 'INBOUND') slot.inbound += 1;
+        else slot.outbound += 1;
+      }
+    });
+
+    conversations.forEach(({ createdAt }) => {
+      const key = createdAt.toISOString().slice(0, 10);
+      const slot = dayMap.get(key);
+      if (slot) slot.conversas += 1;
+    });
+
+    return Array.from(dayMap.entries()).map(([key, values]) => ({
+      date: key,
+      ...values,
+    }));
+  }
+
   async findOne(userId: string, botId: string) {
     const bot = await this.prisma.bot.findUnique({
       where: { id: botId },

@@ -20,6 +20,11 @@ interface Dialog360WebhookPayload {
           timestamp: string;
           type: string;
           text?: { body: string };
+          interactive?: {
+            type: string;
+            list_reply?: { id: string; title: string; description?: string };
+            button_reply?: { id: string; title: string };
+          };
         }>;
         statuses?: Array<{
           id: string;
@@ -52,12 +57,13 @@ export class WebhookController {
       for (const change of entry.changes || []) {
         const value = change.value;
 
-        // Processa apenas mensagens (ignora status updates)
+        // Processa mensagens
         if (value.messages && value.messages.length > 0) {
           for (const message of value.messages) {
-            // Só processa mensagens de texto por enquanto
+            const contactName = value.contacts?.[0]?.profile?.name;
+
+            // Mensagens de texto
             if (message.type === 'text' && message.text?.body) {
-              const contactName = value.contacts?.[0]?.profile?.name;
               await this.webhookService.processIncomingMessage(
                 botId,
                 message.from,
@@ -65,6 +71,23 @@ export class WebhookController {
                 message.id,
                 contactName,
               );
+            }
+
+            // Respostas interativas (list_reply ou button_reply)
+            if (message.type === 'interactive' && message.interactive) {
+              const interactive = message.interactive;
+              const reply = interactive.list_reply || interactive.button_reply;
+              if (reply) {
+                await this.webhookService.processInteractiveResponse(
+                  botId,
+                  message.from,
+                  interactive.type,
+                  reply.id,
+                  reply.title,
+                  message.id,
+                  contactName,
+                );
+              }
             }
           }
         }

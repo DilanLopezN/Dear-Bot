@@ -52,6 +52,75 @@ export class Dialog360Service {
     }
   }
 
+  /** Envia mensagem interativa com lista de opções via WhatsApp */
+  async sendInteractiveListMessage(
+    apiKey: string,
+    to: string,
+    header: string,
+    body: string,
+    footer: string | undefined,
+    buttonText: string,
+    sections: Array<{ title: string; rows: Array<{ id: string; title: string; description?: string }> }>,
+  ) {
+    const client = this.getClient(apiKey);
+    try {
+      const response = await client.post('/messages', {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to,
+        type: 'interactive',
+        interactive: {
+          type: 'list',
+          header: { type: 'text', text: header },
+          body: { text: body },
+          ...(footer ? { footer: { text: footer } } : {}),
+          action: {
+            button: buttonText,
+            sections,
+          },
+        },
+      });
+      this.logger.log(`Menu interativo enviado para ${to}`);
+      return response.data;
+    } catch (error) {
+      this.logger.error(`Erro ao enviar menu interativo: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /** Envia mensagem interativa com botões de resposta rápida */
+  async sendInteractiveButtonMessage(
+    apiKey: string,
+    to: string,
+    body: string,
+    buttons: Array<{ id: string; title: string }>,
+  ) {
+    const client = this.getClient(apiKey);
+    try {
+      const response = await client.post('/messages', {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to,
+        type: 'interactive',
+        interactive: {
+          type: 'button',
+          body: { text: body },
+          action: {
+            buttons: buttons.map((btn) => ({
+              type: 'reply',
+              reply: { id: btn.id, title: btn.title },
+            })),
+          },
+        },
+      });
+      this.logger.log(`Botões interativos enviados para ${to}`);
+      return response.data;
+    } catch (error) {
+      this.logger.error(`Erro ao enviar botões: ${error.message}`);
+      throw error;
+    }
+  }
+
   /** Marca mensagem como lida */
   async markAsRead(apiKey: string, messageId: string) {
     const client = this.getClient(apiKey);

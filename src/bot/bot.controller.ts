@@ -24,6 +24,16 @@ export class BotController {
     return this.botService.getDashboardOverview(userId);
   }
 
+  @Get('reports/analytics')
+  getReportsAnalytics(@CurrentUser('id') userId: string) {
+    return this.botService.getReportsAnalytics(userId);
+  }
+
+  @Get('reports/monthly')
+  getMonthlyMetrics(@CurrentUser('id') userId: string) {
+    return this.botService.getMonthlyMetrics(userId);
+  }
+
   @Get(':id')
   findOne(@CurrentUser('id') userId: string, @Param('id') id: string) {
     return this.botService.findOne(userId, id);

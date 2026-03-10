@@ -61,8 +61,27 @@ model Bot {
   whatsappChannel WhatsappChannel?
   keywords        Keyword[]
   conversations   Conversation[]
+  menus           InteractiveMenu[]
 
   @@map("bots")
+}
+
+model InteractiveMenu {
+  id          String   @id @default(uuid())
+  botId       String
+  trigger     String   // Keyword or command that activates this menu
+  title       String   // Menu title/header
+  body        String?  @db.Text // Menu body text
+  footer      String?  // Menu footer text
+  options     Json     // Array of { id: string, title: string, description?: string }
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  bot Bot @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@index([botId, trigger])
+  @@map("interactive_menus")
 }
 
 model WhatsappChannel {

@@ -8,6 +8,7 @@ import { WebhookModule } from './webhook/webhook.module';
 import { ConversationModule } from './conversation/conversation.module';
 import { WhatsappChannelModule } from './whatsapp-channel/whatsapp-channel.module';
 import { ServicesModule } from './services/services.module';
+import { MenuModule } from './menu/menu.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { ServicesModule } from './services/services.module';
     ConversationModule,
     WhatsappChannelModule,
     ServicesModule,
+    MenuModule,
   ],
 })
 export class AppModule {}

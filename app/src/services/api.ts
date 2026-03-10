@@ -44,8 +44,9 @@ export interface MenuOption {
 }
 
 export interface FlowStep {
-  type: 'GOTO_MENU';
-  menuTrigger: string;
+  type: 'GOTO_MENU' | 'GOTO_KEYWORD';
+  menuTrigger?: string;
+  keywordTrigger?: string;
 }
 
 export interface FlowConfig {

@@ -128,10 +128,10 @@ function BotFormModal({ open, onClose, bot }: { open: boolean; onClose: () => vo
             </p>
           </FormField>
         )}
-        <FormField label="Mensagem inicial (primeira resposta)">
-          <textarea {...register('initialMessage')} placeholder="Ex: Olá! Sou o assistente virtual e vou te ajudar." rows={3} className={inputClass + ' resize-none'} />
+        <FormField label="Primeira etapa (mensagem inicial)">
+          <textarea {...register('initialMessage')} placeholder="Ex: menu" rows={3} className={inputClass + ' resize-none'} />
           <p className="text-xs text-[var(--color-text-muted)] mt-1.5">
-            Essa mensagem é enviada automaticamente na primeira interação de cada contato.
+            Use uma interação inicial (ex: keyword que dispare um menu interativo). Evite saudações genéricas.
           </p>
         </FormField>
         <FormField label="System Prompt (IA)">
@@ -145,7 +145,7 @@ function BotFormModal({ open, onClose, bot }: { open: boolean; onClose: () => vo
             className={inputClass + ' resize-y font-mono text-xs'}
           />
           <p className="text-xs text-[var(--color-text-muted)] mt-1.5">
-            Configure passos automáticos de início da conversa, fallback e goto.
+            Defina um fluxo da primeira etapa (ex.: keyword {' > ' } menu interativo) com fallback e goto.
           </p>
         </FormField>
         <div className="flex justify-end gap-3 mt-7">
@@ -728,6 +728,33 @@ function WhatsAppEmulator({ open, onClose, bot }: { open: boolean; onClose: () =
   );
 }
 
+
+
+function buildFlowPreview(bot: Bot): string[] {
+  const preview: string[] = [];
+
+  if (bot.initialMessage?.trim()) {
+    preview.push(`primeira etapa: ${bot.initialMessage.trim()}`);
+  }
+
+  const steps = bot.flowConfig?.steps || [];
+  for (const step of steps) {
+    if (step.type === 'GOTO_MENU' && step.menuTrigger) {
+      preview.push(`goto menu interativo: ${step.menuTrigger}`);
+    }
+    if (step.type === 'GOTO_KEYWORD' && step.keywordTrigger) {
+      preview.push(`goto keyword: ${step.keywordTrigger}`);
+    }
+  }
+
+  const fallback = bot.flowConfig?.fallback;
+  if (fallback?.goto) {
+    preview.push(`fallback → ${fallback.goto.type.toLowerCase()}: ${fallback.goto.target}`);
+  }
+
+  return preview;
+}
+
 // ─── Main Page ───
 export default function BotsPage() {
   const { bots, fetchBots, deleteBot, updateBot, loading } = useBotStore();
@@ -819,6 +846,15 @@ export default function BotsPage() {
                 <span className="flex items-center gap-1.5"><Key className="w-3.5 h-3.5" /> {bot._count?.keywords || 0} keywords</span>
                 <span className="flex items-center gap-1.5"><MessageSquare className="w-3.5 h-3.5" /> {bot._count?.conversations || 0} conversas</span>
               </div>
+
+              {buildFlowPreview(bot).length > 0 && (
+                <div className="mt-4 p-3 rounded-xl bg-[var(--color-bg-tertiary)] border border-[var(--color-border)]">
+                  <p className="text-xs font-medium text-[var(--color-text-secondary)] mb-2">Visualização do fluxo</p>
+                  <p className="text-xs text-[var(--color-text-muted)] break-words">
+                    {buildFlowPreview(bot).join(' > ')}
+                  </p>
+                </div>
+              )}
             </div>
           ))}
         </div>

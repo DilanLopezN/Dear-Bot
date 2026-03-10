@@ -6,6 +6,7 @@ interface AuthState {
   loading: boolean;
   error: string | null;
   login: (email: string, token: string) => Promise<void>;
+  loginWithPassword: (email: string, password: string) => Promise<void>;
   logout: () => void;
   checkAuth: () => void;
 }
@@ -24,6 +25,20 @@ export const useAuthStore = create<AuthState>((set) => ({
       set({
         loading: false,
         error: err.response?.data?.message || 'Token inválido ou expirado',
+      });
+      throw err;
+    }
+  },
+
+  loginWithPassword: async (email, password) => {
+    set({ loading: true, error: null });
+    try {
+      await api.loginWithPassword(email, password);
+      set({ isAuthenticated: true, loading: false });
+    } catch (err: any) {
+      set({
+        loading: false,
+        error: err.response?.data?.message || 'Email ou senha inválidos',
       });
       throw err;
     }

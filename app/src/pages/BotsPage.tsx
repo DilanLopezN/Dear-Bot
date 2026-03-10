@@ -5,7 +5,7 @@ import { api, type InteractiveMenu, type MenuOption } from '@/services/api';
 import {
   Plus, Trash2, Pencil, Zap, Key, X, Power, PowerOff,
   MessageSquare, Bot as BotIcon, Phone, Loader2, Send,
-  Play, ArrowLeft, Check, CheckCheck, List,
+  Play, ArrowLeft, Check, CheckCheck, List, Cpu,
 } from 'lucide-react';
 
 // ─── Shared styles ───
@@ -43,21 +43,30 @@ function FormField({ label, error, children }: { label: string; error?: string; 
 
 // ─── Create/Edit Bot Modal ───
 function BotFormModal({ open, onClose, bot }: { open: boolean; onClose: () => void; bot?: Bot | null }) {
-  const { register, handleSubmit, reset, formState: { errors } } = useForm({
-    defaultValues: { name: bot?.name || '', responseMode: bot?.responseMode || 'KEYWORDS', systemPrompt: bot?.systemPrompt || '' },
+  const { register, handleSubmit, reset, watch, formState: { errors } } = useForm({
+    defaultValues: { name: bot?.name || '', responseMode: bot?.responseMode || 'KEYWORDS', systemPrompt: bot?.systemPrompt || '', aiConfigId: bot?.aiConfigId || '' },
   });
   const { createBot, updateBot } = useBotStore();
   const [saving, setSaving] = useState(false);
+  const [aiConfigs, setAiConfigs] = useState<any[]>([]);
+  const responseMode = watch('responseMode');
 
   useEffect(() => {
-    reset({ name: bot?.name || '', responseMode: bot?.responseMode || 'KEYWORDS', systemPrompt: bot?.systemPrompt || '' });
+    reset({ name: bot?.name || '', responseMode: bot?.responseMode || 'KEYWORDS', systemPrompt: bot?.systemPrompt || '', aiConfigId: bot?.aiConfigId || '' });
   }, [bot, reset]);
+
+  useEffect(() => {
+    if (open) {
+      api.getAiConfigs().then(setAiConfigs).catch(() => setAiConfigs([]));
+    }
+  }, [open]);
 
   const onSubmit = async (data: any) => {
     setSaving(true);
     try {
-      if (bot) await updateBot(bot.id, data);
-      else await createBot(data);
+      const payload = { ...data, aiConfigId: data.aiConfigId || null };
+      if (bot) await updateBot(bot.id, payload);
+      else await createBot(payload);
       onClose();
     } catch {} finally { setSaving(false); }
   };
@@ -71,10 +80,25 @@ function BotFormModal({ open, onClose, bot }: { open: boolean; onClose: () => vo
         <FormField label="Modo de resposta">
           <select {...register('responseMode')} className={inputClass}>
             <option value="KEYWORDS">Keywords</option>
-            <option value="AI">IA (Claude)</option>
+            <option value="AI">I.A.</option>
             <option value="HYBRID">Híbrido</option>
           </select>
         </FormField>
+        {(responseMode === 'AI' || responseMode === 'HYBRID') && (
+          <FormField label="Configuração de I.A.">
+            <select {...register('aiConfigId')} className={inputClass}>
+              <option value="">Claude (padrão do ambiente)</option>
+              {aiConfigs.map((c: any) => (
+                <option key={c.id} value={c.id}>
+                  {c.name} ({c.provider} - {c.model})
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-[var(--color-text-muted)] mt-1.5">
+              Configure provedores em Configuração I.A. no menu lateral
+            </p>
+          </FormField>
+        )}
         <FormField label="System Prompt (IA)">
           <textarea {...register('systemPrompt')} placeholder="Instruções para a IA..." rows={4} className={inputClass + ' resize-none'} />
         </FormField>
@@ -636,6 +660,11 @@ export default function BotsPage() {
                   <span className="text-xs px-2.5 py-1 rounded-full bg-[var(--color-accent-glow)] text-[var(--color-accent)] font-medium">
                     {bot.responseMode}
                   </span>
+                  {bot.aiConfig && (
+                    <span className="text-xs px-2.5 py-1 rounded-full bg-purple-500/10 text-purple-400 flex items-center gap-1.5">
+                      <Cpu className="w-3 h-3" /> {bot.aiConfig.provider} - {bot.aiConfig.model}
+                    </span>
+                  )}
                   {bot.whatsappChannel && (
                     <span className="text-xs px-2.5 py-1 rounded-full bg-green-500/10 text-green-400 flex items-center gap-1.5">
                       <Zap className="w-3 h-3" /> {bot.whatsappChannel.phoneNumber}

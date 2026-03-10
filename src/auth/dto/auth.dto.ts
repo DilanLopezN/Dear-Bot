@@ -24,3 +24,12 @@ export class LoginDto {
   @IsString()
   token: string;
 }
+
+export class LoginPasswordDto {
+  @IsEmail()
+  email: string;
+
+  @IsString()
+  @MinLength(6)
+  password: string;
+}

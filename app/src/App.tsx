@@ -7,6 +7,7 @@ import DashboardPage from '@/pages/DashboardPage';
 import BotsPage from '@/pages/BotsPage';
 import RelatoriosPage from '@/pages/RelatoriosPage';
 import FinanceiroPage from '@/pages/FinanceiroPage';
+import AiConfigPage from '@/pages/AiConfigPage';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuthStore();
@@ -29,6 +30,7 @@ export default function App() {
         <Route path="/bots" element={<BotsPage />} />
         <Route path="/relatorios" element={<RelatoriosPage />} />
         <Route path="/financeiro" element={<FinanceiroPage />} />
+        <Route path="/ai-config" element={<AiConfigPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

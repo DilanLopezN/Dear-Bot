@@ -22,6 +22,7 @@ type FlowStep = {
 };
 
 type FlowConfig = {
+  initialInteraction?: GotoConfig;
   steps?: FlowStep[];
   fallback?: {
     message: string;
@@ -126,6 +127,27 @@ export class WebhookService {
     );
   }
 
+  private async sendKeywordResponse(
+    botId: string,
+    apiKey: string,
+    to: string,
+    conversationId: string,
+    keywordTrigger: string,
+  ): Promise<GotoConfig | undefined> {
+    const keyword = await this.keywordService.findByExactTrigger(botId, keywordTrigger);
+    if (!keyword) throw new Error(`Keyword '${keywordTrigger}' não encontrada`);
+
+    const result = await this.dialog360.sendTextMessage(apiKey, to, keyword.response);
+    await this.conversationService.saveMessage(
+      conversationId,
+      'OUTBOUND',
+      keyword.response,
+      result?.messages?.[0]?.id,
+    );
+
+    return keyword.goto as GotoConfig | undefined;
+  }
+
   private async executeGoto(
     botId: string,
     apiKey: string,
@@ -141,16 +163,11 @@ export class WebhookService {
     }
 
     if (goto.type === 'KEYWORD') {
-      const keyword = await this.keywordService.findByExactTrigger(botId, goto.target);
-      if (!keyword) throw new Error(`Keyword '${goto.target}' não encontrada`);
-
-      const result = await this.dialog360.sendTextMessage(apiKey, to, keyword.response);
-      await this.conversationService.saveMessage(
-        conversationId,
-        'OUTBOUND',
-        keyword.response,
-        result?.messages?.[0]?.id,
-      );
+      const nextGoto = await this.sendKeywordResponse(botId, apiKey, to, conversationId, goto.target);
+      // Se a keyword tiver goto, seguir a cadeia
+      if (nextGoto) {
+        await this.executeGoto(botId, apiKey, to, conversationId, nextGoto);
+      }
       return true;
     }
 
@@ -220,13 +237,24 @@ export class WebhookService {
       if (step.type === 'GOTO_KEYWORD') {
         if (!step.keywordTrigger) throw new Error('GOTO_KEYWORD sem keywordTrigger configurado');
 
-        await this.executeGoto(
+        const nextGoto = await this.sendKeywordResponse(
           bot.id,
           bot.whatsappChannel.dialog360ApiKey,
           from,
           conversation.id,
-          { type: 'KEYWORD', target: step.keywordTrigger },
+          step.keywordTrigger,
         );
+
+        // Se a keyword tiver goto, seguir a cadeia
+        if (nextGoto) {
+          await this.executeGoto(
+            bot.id,
+            bot.whatsappChannel.dialog360ApiKey,
+            from,
+            conversation.id,
+            nextGoto,
+          );
+        }
 
         await this.prisma.conversation.update({
           where: { id: conversation.id },
@@ -281,14 +309,28 @@ export class WebhookService {
         messageId,
       );
 
-      if (isFirstInteraction && bot.initialMessage) {
-        const initialResult = await this.dialog360.sendTextMessage(apiKey, from, bot.initialMessage);
-        await this.conversationService.saveMessage(
-          conversation.id,
-          'OUTBOUND',
-          bot.initialMessage,
-          initialResult?.messages?.[0]?.id,
-        );
+      // Primeira interação: usar initialInteraction (goto) ou initialMessage (texto legado)
+      if (isFirstInteraction) {
+        const flow = this.parseFlowConfig(bot.flowConfig);
+
+        if (flow.initialInteraction) {
+          try {
+            await this.executeGoto(bot.id, apiKey, from, conversation.id, flow.initialInteraction);
+            return;
+          } catch (error) {
+            this.logger.warn(`Falha ao executar initialInteraction: ${error.message}`);
+            await this.executeFallback(bot, from, conversation.id, error.message);
+            return;
+          }
+        } else if (bot.initialMessage) {
+          const initialResult = await this.dialog360.sendTextMessage(apiKey, from, bot.initialMessage);
+          await this.conversationService.saveMessage(
+            conversation.id,
+            'OUTBOUND',
+            bot.initialMessage,
+            initialResult?.messages?.[0]?.id,
+          );
+        }
       }
 
       const handledByFlow = await this.processConfiguredFlowStep(bot, from, conversation);
@@ -319,26 +361,55 @@ export class WebhookService {
         return;
       }
 
+      // Keyword match com suporte a goto
       let responseText: string | null = null;
 
       switch (bot.responseMode) {
-        case 'KEYWORDS':
-          responseText = await this.keywordService.findMatch(botId, text);
-          if (!responseText) {
-            responseText = 'Desculpe, não entendi. Tente reformular sua pergunta.';
+        case 'KEYWORDS': {
+          const match = await this.keywordService.findMatch(botId, text);
+          if (match) {
+            responseText = match.response;
+            // Enviar resposta da keyword
+            const result = await this.dialog360.sendTextMessage(apiKey, from, responseText);
+            await this.conversationService.saveMessage(
+              conversation.id,
+              'OUTBOUND',
+              responseText,
+              result?.messages?.[0]?.id,
+            );
+            // Se tiver goto, navegar
+            if (match.goto) {
+              await this.executeGoto(botId, apiKey, from, conversation.id, match.goto);
+            }
+            return;
           }
+          responseText = 'Desculpe, não entendi. Tente reformular sua pergunta.';
           break;
+        }
 
         case 'AI':
           responseText = await this.generateAIResponse(bot, conversation.id, text);
           break;
 
-        case 'HYBRID':
-          responseText = await this.keywordService.findMatch(botId, text);
-          if (!responseText) {
-            responseText = await this.generateAIResponse(bot, conversation.id, text);
+        case 'HYBRID': {
+          const match = await this.keywordService.findMatch(botId, text);
+          if (match) {
+            responseText = match.response;
+            const result = await this.dialog360.sendTextMessage(apiKey, from, responseText);
+            await this.conversationService.saveMessage(
+              conversation.id,
+              'OUTBOUND',
+              responseText,
+              result?.messages?.[0]?.id,
+            );
+            if (match.goto) {
+              await this.executeGoto(botId, apiKey, from, conversation.id, match.goto);
+            }
+            return;
           }
+          responseText = await this.generateAIResponse(bot, conversation.id, text);
           break;
+        }
       }
 
       if (responseText) {

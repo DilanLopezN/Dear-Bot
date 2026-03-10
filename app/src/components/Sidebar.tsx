@@ -16,33 +16,43 @@ export default function Sidebar() {
   const { theme, mode, toggleTheme } = useTheme();
 
   return (
-    <aside style={{ width: 280, height: '100vh', display: 'flex', flexDirection: 'column', background: theme.bgSecondary, borderRight: `1px solid ${theme.border}` }}>
-      <div className="drag-region" style={{ height: 74, display: 'flex', alignItems: 'center', gap: 12, padding: '0 20px', borderBottom: `1px solid ${theme.border}` }}>
-        <div className="no-drag" style={{ width: 38, height: 38, borderRadius: 12, background: theme.accent, display: 'grid', placeItems: 'center' }}><MessageSquare size={18} color="#fff" /></div>
-        <strong className="no-drag" style={{ color: theme.textPrimary, fontSize: 18 }}>Dear Bot</strong>
+    <aside className="w-[280px] h-screen flex flex-col bg-[var(--color-bg-secondary)] border-r border-[var(--color-border)] shrink-0">
+      <div className="h-[74px] flex items-center gap-3 px-6 border-b border-[var(--color-border)] drag-region">
+        <div className="w-10 h-10 rounded-xl bg-[var(--color-accent)] flex items-center justify-center no-drag">
+          <MessageSquare className="w-5 h-5 text-white" />
+        </div>
+        <span className="text-lg font-bold tracking-tight text-[var(--color-text-primary)] no-drag" style={{ fontFamily: 'var(--font-display)' }}>
+          Dear Bot
+        </span>
       </div>
-      <nav style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 8, flex: 1 }}>
+
+      <nav className="flex-1 py-6 px-4 flex flex-col gap-2">
         {navItems.map(({ to, icon: Icon, label }) => (
-          <NavLink key={to} to={to} end={to === '/'} style={({ isActive }) => ({
-            color: isActive ? theme.accent : theme.textSecondary,
-            background: isActive ? `${theme.accent}20` : 'transparent',
-            textDecoration: 'none',
-            border: `1px solid ${isActive ? `${theme.accent}40` : 'transparent'}`,
-            borderRadius: 12,
-            padding: '12px 14px',
-            display: 'flex',
-            gap: 10,
-            alignItems: 'center',
-            fontWeight: 600,
-          })}><Icon size={18} />{label}</NavLink>
+          <NavLink
+            key={to}
+            to={to}
+            end={to === '/'}
+            className={({ isActive }) =>
+              `flex items-center gap-3 px-4 py-3.5 rounded-xl text-[15px] font-medium transition-all ${
+                isActive
+                  ? 'bg-[var(--color-accent-glow)] text-[var(--color-accent)] border border-[var(--color-accent)]/20'
+                  : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)]'
+              }`
+            }
+          >
+            <Icon className="w-5 h-5" />
+            {label}
+          </NavLink>
         ))}
       </nav>
-      <div style={{ padding: 16, borderTop: `1px solid ${theme.border}`, display: 'grid', gap: 10 }}>
-        <button onClick={toggleTheme} style={{ height: 44, borderRadius: 12, border: `1px solid ${theme.border}`, background: theme.bgCard, color: theme.textPrimary, cursor: 'pointer' }}>
-          {mode === 'dark' ? <Sun size={16} /> : <Moon size={16} />} {mode === 'dark' ? 'Tema claro' : 'Tema escuro'}
-        </button>
-        <button onClick={() => { logout(); navigate('/login'); }} style={{ height: 44, borderRadius: 12, border: `1px solid ${theme.border}`, background: `${theme.danger}14`, color: theme.danger, cursor: 'pointer' }}>
-          <LogOut size={16} /> Sair
+
+      <div className="p-4 border-t border-[var(--color-border)]">
+        <button
+          onClick={handleLogout}
+          className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm text-[var(--color-text-secondary)] hover:text-red-400 hover:bg-red-500/10 transition-all cursor-pointer"
+        >
+          <LogOut className="w-5 h-5" />
+          Sair
         </button>
       </div>
     </aside>

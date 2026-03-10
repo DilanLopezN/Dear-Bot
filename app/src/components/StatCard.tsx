@@ -13,14 +13,18 @@ export default function StatCard({ label, value, icon: Icon, trend, color }: Sta
   const { theme } = useTheme();
   const iconColor = color || theme.accent;
   return (
-    <div style={{ background: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: 16, padding: 24, display: 'flex', justifyContent: 'space-between' }}>
+    <div className="bg-[var(--color-bg-card)] border border-[var(--color-border)] rounded-2xl p-7 flex items-start justify-between hover:border-[var(--color-border-light)] transition-colors">
       <div>
-        <p style={{ margin: 0, fontSize: 12, color: theme.textSecondary, textTransform: 'uppercase' }}>{label}</p>
-        <h3 style={{ margin: '12px 0 0', fontSize: 30, color: theme.textPrimary }}>{value}</h3>
-        {trend ? <span style={{ display: 'block', marginTop: 10, color: trend.positive ? '#22c55e' : theme.danger, fontSize: 13 }}>{trend.value}</span> : null}
+        <p className="text-xs font-medium text-[var(--color-text-muted)] uppercase tracking-wider mb-3">{label}</p>
+        <p className="text-3xl font-bold text-[var(--color-text-primary)]" style={{ fontFamily: 'var(--font-display)' }}>{value}</p>
+        {trend && (
+          <span className={`text-sm font-medium mt-3 inline-block ${trend.positive ? 'text-green-400' : 'text-red-400'}`}>
+            {trend.positive ? '↑' : '↓'} {trend.value}
+          </span>
+        )}
       </div>
-      <div style={{ width: 52, height: 52, borderRadius: 14, background: `${iconColor}22`, display: 'grid', placeItems: 'center' }}>
-        <Icon size={24} color={iconColor} />
+      <div className="w-14 h-14 rounded-2xl flex items-center justify-center" style={{ background: `${color}15` }}>
+        <Icon className="w-6 h-6" style={{ color }} />
       </div>
     </div>
   );

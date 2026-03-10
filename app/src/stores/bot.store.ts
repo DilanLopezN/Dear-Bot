@@ -7,6 +7,7 @@ export interface Bot {
   responseMode: 'KEYWORDS' | 'AI' | 'HYBRID';
   isActive: boolean;
   systemPrompt?: string;
+  initialMessage?: string;
   aiConfigId?: string | null;
   aiConfig?: {
     id: string;
@@ -33,7 +34,7 @@ interface BotState {
   loading: boolean;
   fetchBots: () => Promise<void>;
   selectBot: (bot: Bot | null) => void;
-  createBot: (payload: { name: string; responseMode?: string; systemPrompt?: string; aiConfigId?: string | null; flowConfig?: FlowConfig }) => Promise<Bot>;
+  createBot: (payload: { name: string; responseMode?: string; initialMessage?: string; systemPrompt?: string; aiConfigId?: string | null; flowConfig?: FlowConfig }) => Promise<Bot>;
   updateBot: (botId: string, payload: Record<string, unknown>) => Promise<void>;
   deleteBot: (botId: string) => Promise<void>;
 }

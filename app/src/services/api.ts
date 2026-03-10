@@ -128,7 +128,7 @@ class ApiService {
     return data;
   }
 
-  async createBot(payload: { name: string; responseMode?: string; systemPrompt?: string; aiConfigId?: string | null; flowConfig?: FlowConfig }) {
+  async createBot(payload: { name: string; responseMode?: string; initialMessage?: string; systemPrompt?: string; aiConfigId?: string | null; flowConfig?: FlowConfig }) {
     const { data } = await this.client.post('/bots', payload);
     return data;
   }

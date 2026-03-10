@@ -1,47 +1,51 @@
-import { useForm } from 'react-hook-form';
-import { useNavigate, Link } from 'react-router-dom';
-import { useState } from 'react';
-import { api } from '@/services/api';
-import { MessageSquare, Mail, User, KeyRound, Loader2 } from 'lucide-react';
+import { useForm } from 'react-hook-form'
+import { useNavigate, Link } from 'react-router-dom'
+import { useState } from 'react'
+import { api } from '@/services/api'
+import { MessageSquare, Mail, User, KeyRound, Loader2 } from 'lucide-react'
 
 interface RegisterForm {
-  name: string;
-  email: string;
-  password: string;
+  name: string
+  email: string
+  password: string
 }
 
 export default function RegisterPage() {
   const {
     register,
     handleSubmit,
-    formState: { errors },
-  } = useForm<RegisterForm>();
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const navigate = useNavigate();
+    formState: { errors }
+  } = useForm<RegisterForm>()
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const navigate = useNavigate()
 
   const onSubmit = async (data: RegisterForm) => {
-    setLoading(true);
-    setError(null);
+    setLoading(true)
+    setError(null)
     try {
-      await api.register(data.name, data.email, data.password);
-      navigate('/login', { state: { registered: true } });
+      await api.register(data.name, data.email, data.password)
+      navigate('/login', { state: { registered: true } })
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Erro ao criar conta');
+      setError(err.response?.data?.message || 'Erro ao criar conta')
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
   return (
-    <div className="h-screen flex items-center justify-center bg-[var(--color-bg-primary)] relative overflow-hidden">
-      <div className="absolute inset-0 pointer-events-none">
-        <div className="absolute top-[-20%] left-[-10%] w-[600px] h-[600px] rounded-full bg-[var(--color-accent)] opacity-[0.05] blur-[120px]" />
+    <div
+      className="
+    
+    h-screen flex items-center justify-center bg-[var(--color-bg-primary)] relative overflow-hidden"
+    >
+      <div className=" absolute inset-0 pointer-events-none">
+        <div className=" absolute top-[-20%] left-[-10%] w-[600px] h-[600px] rounded-full bg-[var(--color-accent)] opacity-[0.05] blur-[120px]" />
         <div className="absolute bottom-[-20%] right-[-10%] w-[500px] h-[500px] rounded-full bg-emerald-800 opacity-[0.04] blur-[100px]" />
       </div>
 
-      <div className="relative z-10 w-full max-w-[460px] px-6">
-        <div className="flex items-center gap-3 mb-10 justify-center">
+      <div className="relative h-[680px] z-10 w-full max-w-[660px] px-6">
+        <div className="flex items-center gap-3  justify-center m-10">
           <div className="w-12 h-12 rounded-xl bg-[var(--color-accent)] flex items-center justify-center shadow-lg shadow-green-500/20">
             <MessageSquare className="w-6 h-6 text-white" />
           </div>
@@ -70,7 +74,10 @@ export default function RegisterPage() {
             </div>
           )}
 
-          <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-5">
+          <form
+            onSubmit={handleSubmit(onSubmit)}
+            className="flex flex-col gap-5"
+          >
             <div>
               <label className="text-sm font-medium text-[var(--color-text-secondary)] mb-2.5 block">
                 Nome
@@ -87,7 +94,9 @@ export default function RegisterPage() {
                 />
               </div>
               {errors.name && (
-                <span className="text-xs text-red-400 mt-2 block">{errors.name.message}</span>
+                <span className="text-xs text-red-400 mt-2 block">
+                  {errors.name.message}
+                </span>
               )}
             </div>
 
@@ -102,7 +111,7 @@ export default function RegisterPage() {
                 <input
                   {...register('email', {
                     required: 'Email obrigatório',
-                    pattern: { value: /^\S+@\S+$/, message: 'Email inválido' },
+                    pattern: { value: /^\S+@\S+$/, message: 'Email inválido' }
                   })}
                   type="email"
                   placeholder="seu@email.com"
@@ -110,7 +119,9 @@ export default function RegisterPage() {
                 />
               </div>
               {errors.email && (
-                <span className="text-xs text-red-400 mt-2 block">{errors.email.message}</span>
+                <span className="text-xs text-red-400 mt-2 block">
+                  {errors.email.message}
+                </span>
               )}
             </div>
 
@@ -125,7 +136,7 @@ export default function RegisterPage() {
                 <input
                   {...register('password', {
                     required: 'Senha obrigatória',
-                    minLength: { value: 6, message: 'Mínimo 6 caracteres' },
+                    minLength: { value: 6, message: 'Mínimo 6 caracteres' }
                   })}
                   type="password"
                   placeholder="Mínimo 6 caracteres"
@@ -133,7 +144,9 @@ export default function RegisterPage() {
                 />
               </div>
               {errors.password && (
-                <span className="text-xs text-red-400 mt-2 block">{errors.password.message}</span>
+                <span className="text-xs text-red-400 mt-2 block">
+                  {errors.password.message}
+                </span>
               )}
             </div>
 
@@ -148,13 +161,16 @@ export default function RegisterPage() {
           </form>
         </div>
 
-        <p className="text-center text-sm text-[var(--color-text-muted)] mt-8">
+        <p className="text-center text-sm text-[var(--color-text-muted)] mt-14">
           Já tem uma conta?{' '}
-          <Link to="/login" className="text-[var(--color-accent)] hover:underline font-medium">
+          <Link
+            to="/login"
+            className="text-[var(--color-accent)] hover:underline font-medium"
+          >
             Fazer login
           </Link>
         </p>
       </div>
     </div>
-  );
+  )
 }

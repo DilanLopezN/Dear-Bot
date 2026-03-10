@@ -7,6 +7,10 @@ export interface MenuOption {
   id: string;
   title: string;
   description?: string;
+  goto?: {
+    type: 'MENU' | 'KEYWORD';
+    target: string;
+  };
 }
 
 @Injectable()
@@ -54,6 +58,16 @@ export class MenuService {
   async remove(userId: string, botId: string, menuId: string) {
     await this.botService.findOne(userId, botId);
     return this.prisma.interactiveMenu.delete({ where: { id: menuId } });
+  }
+
+  async findByTrigger(botId: string, trigger: string) {
+    return this.prisma.interactiveMenu.findFirst({
+      where: {
+        botId,
+        isActive: true,
+        trigger: { equals: trigger, mode: 'insensitive' },
+      },
+    });
   }
 
   /** Finds a menu matching the user message (case-insensitive) */

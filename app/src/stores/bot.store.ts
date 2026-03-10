@@ -7,6 +7,13 @@ export interface Bot {
   responseMode: 'KEYWORDS' | 'AI' | 'HYBRID';
   isActive: boolean;
   systemPrompt?: string;
+  aiConfigId?: string | null;
+  aiConfig?: {
+    id: string;
+    provider: string;
+    name: string;
+    model: string;
+  } | null;
   createdAt: string;
   whatsappChannel?: {
     id: string;

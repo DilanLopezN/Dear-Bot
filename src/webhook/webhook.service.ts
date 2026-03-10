@@ -4,6 +4,8 @@ import { ConversationService } from '../conversation/conversation.service';
 import { KeywordService } from '../keyword/keyword.service';
 import { MenuService } from '../menu/menu.service';
 import { ClaudeService } from '../services/claude.service';
+import { OpenAIService } from '../services/openai.service';
+import { GeminiService } from '../services/gemini.service';
 import { Dialog360Service } from '../services/dialog360.service';
 
 type MessageStatus = 'SENT' | 'DELIVERED' | 'READ' | 'FAILED';
@@ -18,8 +20,59 @@ export class WebhookService {
     private keywordService: KeywordService,
     private menuService: MenuService,
     private claudeService: ClaudeService,
+    private openaiService: OpenAIService,
+    private geminiService: GeminiService,
     private dialog360: Dialog360Service,
   ) {}
+
+  /** Gera resposta via IA usando o provedor configurado no bot */
+  private async generateAIResponse(
+    bot: any,
+    conversationId: string,
+    text: string,
+  ): Promise<string> {
+    const aiConfig = bot.aiConfig;
+
+    // Se o bot tem uma configuração de IA vinculada, usa ela
+    if (aiConfig) {
+      switch (aiConfig.provider) {
+        case 'OPENAI':
+          return this.openaiService.generateResponse(
+            conversationId,
+            text,
+            bot.systemPrompt || undefined,
+            aiConfig.apiKey,
+            aiConfig.model,
+            aiConfig.maxTokens,
+            aiConfig.temperature,
+          );
+        case 'GEMINI':
+          return this.geminiService.generateResponse(
+            conversationId,
+            text,
+            bot.systemPrompt || undefined,
+            aiConfig.apiKey,
+            aiConfig.model,
+            aiConfig.maxTokens,
+            aiConfig.temperature,
+          );
+        case 'CLAUDE':
+        default:
+          return this.claudeService.generateResponse(
+            conversationId,
+            text,
+            bot.systemPrompt || undefined,
+          );
+      }
+    }
+
+    // Fallback: usa Claude com configuração padrão do ambiente
+    return this.claudeService.generateResponse(
+      conversationId,
+      text,
+      bot.systemPrompt || undefined,
+    );
+  }
 
   async processIncomingMessage(
     botId: string,
@@ -29,10 +82,10 @@ export class WebhookService {
     contactName?: string,
   ) {
     try {
-      // 1. Busca o bot e canal
+      // 1. Busca o bot e canal (incluindo aiConfig)
       const bot = await this.prisma.bot.findUnique({
         where: { id: botId },
-        include: { whatsappChannel: true },
+        include: { whatsappChannel: true, aiConfig: true },
       });
 
       if (!bot || !bot.isActive || !bot.whatsappChannel) {
@@ -64,7 +117,6 @@ export class WebhookService {
       const menuMatch = await this.menuService.findMenuMatch(botId, text);
       if (menuMatch) {
         const { menu, options } = menuMatch;
-        // Send interactive list message via Dialog360
         const result = await this.dialog360.sendInteractiveListMessage(
           apiKey,
           from,
@@ -111,22 +163,13 @@ export class WebhookService {
           break;
 
         case 'AI':
-          responseText = await this.claudeService.generateResponse(
-            conversation.id,
-            text,
-            bot.systemPrompt || undefined,
-          );
+          responseText = await this.generateAIResponse(bot, conversation.id, text);
           break;
 
         case 'HYBRID':
-          // Primeiro tenta keyword, se não achar usa IA
           responseText = await this.keywordService.findMatch(botId, text);
           if (!responseText) {
-            responseText = await this.claudeService.generateResponse(
-              conversation.id,
-              text,
-              bot.systemPrompt || undefined,
-            );
+            responseText = await this.generateAIResponse(bot, conversation.id, text);
           }
           break;
       }

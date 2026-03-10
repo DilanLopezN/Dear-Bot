@@ -8,7 +8,7 @@ import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
-import { RegisterDto, RequestTokenDto, LoginDto } from './dto/auth.dto';
+import { RegisterDto, RequestTokenDto, LoginDto, LoginPasswordDto } from './dto/auth.dto';
 
 @Injectable()
 export class AuthService {
@@ -71,6 +71,18 @@ export class AuthService {
       where: { id: user.id },
       data: { loginToken: null, loginTokenExpiry: null },
     });
+
+    return this.signJwt(user.id, user.email);
+  }
+
+  async loginWithPassword(dto: LoginPasswordDto) {
+    const user = await this.prisma.user.findUnique({
+      where: { email: dto.email },
+    });
+    if (!user) throw new UnauthorizedException('Credenciais inválidas');
+
+    const valid = await bcrypt.compare(dto.password, user.password);
+    if (!valid) throw new UnauthorizedException('Credenciais inválidas');
 
     return this.signJwt(user.id, user.email);
   }

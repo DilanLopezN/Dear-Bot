@@ -9,6 +9,7 @@ import { ConversationModule } from './conversation/conversation.module';
 import { WhatsappChannelModule } from './whatsapp-channel/whatsapp-channel.module';
 import { ServicesModule } from './services/services.module';
 import { MenuModule } from './menu/menu.module';
+import { AiConfigModule } from './ai-config/ai-config.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { MenuModule } from './menu/menu.module';
     WhatsappChannelModule,
     ServicesModule,
     MenuModule,
+    AiConfigModule,
   ],
 })
 export class AppModule {}

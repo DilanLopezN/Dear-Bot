@@ -17,6 +17,10 @@ export class CreateBotDto {
   @IsString()
   @IsOptional()
   systemPrompt?: string;
+
+  @IsString()
+  @IsOptional()
+  aiConfigId?: string;
 }
 
 export class UpdateBotDto {
@@ -35,4 +39,8 @@ export class UpdateBotDto {
   @IsString()
   @IsOptional()
   systemPrompt?: string;
+
+  @IsString()
+  @IsOptional()
+  aiConfigId?: string;
 }

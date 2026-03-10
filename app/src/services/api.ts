@@ -92,6 +92,12 @@ class ApiService {
     return data;
   }
 
+  async loginWithPassword(email: string, password: string) {
+    const { data } = await this.client.post('/auth/login-password', { email, password });
+    localStorage.setItem('access_token', data.access_token);
+    return data;
+  }
+
   // Bots
   async getBots() {
     const { data } = await this.client.get('/bots');
@@ -207,6 +213,40 @@ class ApiService {
     const { data } = await this.client.get(
       `/bots/${botId}/conversations/${conversationId}/messages?take=${take}`,
     );
+    return data;
+  }
+
+  // AI Configs
+  async getAiConfigs() {
+    const { data } = await this.client.get('/ai-configs');
+    return data;
+  }
+
+  async getAiConfig(id: string) {
+    const { data } = await this.client.get(`/ai-configs/${id}`);
+    return data;
+  }
+
+  async createAiConfig(payload: {
+    provider: string;
+    name: string;
+    apiKey: string;
+    model: string;
+    maxTokens?: number;
+    temperature?: number;
+    isDefault?: boolean;
+  }) {
+    const { data } = await this.client.post('/ai-configs', payload);
+    return data;
+  }
+
+  async updateAiConfig(id: string, payload: Record<string, unknown>) {
+    const { data } = await this.client.put(`/ai-configs/${id}`, payload);
+    return data;
+  }
+
+  async deleteAiConfig(id: string) {
+    const { data } = await this.client.delete(`/ai-configs/${id}`);
     return data;
   }
 

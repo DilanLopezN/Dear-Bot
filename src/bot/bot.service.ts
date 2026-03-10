@@ -9,14 +9,14 @@ export class BotService {
   async create(userId: string, dto: CreateBotDto) {
     return this.prisma.bot.create({
       data: { ...dto, userId },
-      include: { whatsappChannel: true },
+      include: { whatsappChannel: true, aiConfig: true },
     });
   }
 
   async findAll(userId: string) {
     return this.prisma.bot.findMany({
       where: { userId },
-      include: { whatsappChannel: true, _count: { select: { keywords: true, conversations: true } } },
+      include: { whatsappChannel: true, aiConfig: true, _count: { select: { keywords: true, conversations: true } } },
     });
   }
 
@@ -38,6 +38,7 @@ export class BotService {
           take: 5,
           include: {
             whatsappChannel: true,
+            aiConfig: true,
             _count: { select: { keywords: true, conversations: true } },
           },
         }),
@@ -190,7 +191,7 @@ export class BotService {
   async findOne(userId: string, botId: string) {
     const bot = await this.prisma.bot.findUnique({
       where: { id: botId },
-      include: { whatsappChannel: true, keywords: true },
+      include: { whatsappChannel: true, keywords: true, aiConfig: true },
     });
     if (!bot) throw new NotFoundException('Bot não encontrado');
     if (bot.userId !== userId) throw new ForbiddenException();
@@ -202,7 +203,7 @@ export class BotService {
     return this.prisma.bot.update({
       where: { id: botId },
       data: dto,
-      include: { whatsappChannel: true },
+      include: { whatsappChannel: true, aiConfig: true },
     });
   }
 

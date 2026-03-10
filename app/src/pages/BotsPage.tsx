@@ -48,6 +48,7 @@ function BotFormModal({ open, onClose, bot }: { open: boolean; onClose: () => vo
       name: bot?.name || '',
       responseMode: bot?.responseMode || 'KEYWORDS',
       systemPrompt: bot?.systemPrompt || '',
+      initialMessage: bot?.initialMessage || '',
       aiConfigId: bot?.aiConfigId || '',
       flowConfigJson: bot?.flowConfig ? JSON.stringify(bot.flowConfig, null, 2) : '',
     },
@@ -62,6 +63,7 @@ function BotFormModal({ open, onClose, bot }: { open: boolean; onClose: () => vo
       name: bot?.name || '',
       responseMode: bot?.responseMode || 'KEYWORDS',
       systemPrompt: bot?.systemPrompt || '',
+      initialMessage: bot?.initialMessage || '',
       aiConfigId: bot?.aiConfigId || '',
       flowConfigJson: bot?.flowConfig ? JSON.stringify(bot.flowConfig, null, 2) : '',
     });
@@ -85,6 +87,7 @@ function BotFormModal({ open, onClose, bot }: { open: boolean; onClose: () => vo
         name: data.name,
         responseMode: data.responseMode,
         systemPrompt: data.systemPrompt || undefined,
+        initialMessage: data.initialMessage || undefined,
         aiConfigId: data.aiConfigId || null,
         flowConfig: parsedFlowConfig,
       };
@@ -125,6 +128,12 @@ function BotFormModal({ open, onClose, bot }: { open: boolean; onClose: () => vo
             </p>
           </FormField>
         )}
+        <FormField label="Mensagem inicial (primeira resposta)">
+          <textarea {...register('initialMessage')} placeholder="Ex: Olá! Sou o assistente virtual e vou te ajudar." rows={3} className={inputClass + ' resize-none'} />
+          <p className="text-xs text-[var(--color-text-muted)] mt-1.5">
+            Essa mensagem é enviada automaticamente na primeira interação de cada contato.
+          </p>
+        </FormField>
         <FormField label="System Prompt (IA)">
           <textarea {...register('systemPrompt')} placeholder="Instruções para a IA..." rows={4} className={inputClass + ' resize-none'} />
         </FormField>
@@ -206,9 +215,11 @@ function KeywordsModal({ open, onClose, bot }: { open: boolean; onClose: () => v
 // ─── Interactive Menus Modal ───
 function MenusModal({ open, onClose, bot }: { open: boolean; onClose: () => void; bot: Bot }) {
   const [menus, setMenus] = useState<InteractiveMenu[]>([]);
+  const [keywords, setKeywords] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
-  const { register, handleSubmit, reset, setValue } = useForm({
+  const [editingMenuId, setEditingMenuId] = useState<string | null>(null);
+  const { register, handleSubmit, reset } = useForm({
     defaultValues: { trigger: '', title: '', body: '', footer: '' },
   });
   const [options, setOptions] = useState<MenuOption[]>([]);
@@ -217,11 +228,34 @@ function MenusModal({ open, onClose, bot }: { open: boolean; onClose: () => void
   const [optGotoType, setOptGotoType] = useState<GotoTarget['type'] | ''>('');
   const [optGotoTarget, setOptGotoTarget] = useState('');
 
+  const resetFormState = () => {
+    reset({ trigger: '', title: '', body: '', footer: '' });
+    setOptions([]);
+    setOptTitle('');
+    setOptDesc('');
+    setOptGotoType('');
+    setOptGotoTarget('');
+    setEditingMenuId(null);
+  };
+
   const load = async () => {
     setLoading(true);
-    try { setMenus(await api.getMenus(bot.id)); } catch {} finally { setLoading(false); }
+    try {
+      const [menusData, keywordsData] = await Promise.all([
+        api.getMenus(bot.id),
+        api.getKeywords(bot.id),
+      ]);
+      setMenus(menusData);
+      setKeywords(keywordsData);
+    } catch {} finally { setLoading(false); }
   };
   useEffect(() => { if (open) load(); }, [open]);
+
+  const currentGotoSuggestions = optGotoType === 'MENU'
+    ? menus.map((m) => m.trigger)
+    : optGotoType === 'KEYWORD'
+      ? keywords.map((k) => k.trigger)
+      : [];
 
   const addOption = () => {
     if (!optTitle.trim()) return;
@@ -239,19 +273,38 @@ function MenusModal({ open, onClose, bot }: { open: boolean; onClose: () => void
 
   const removeOption = (id: string) => setOptions(options.filter((o) => o.id !== id));
 
-  const onAdd = async (data: any) => {
+  const onSubmitMenu = async (data: any) => {
     if (options.length === 0) return;
-    await api.createMenu(bot.id, {
+
+    const payload = {
       trigger: data.trigger,
       title: data.title,
       body: data.body || undefined,
       footer: data.footer || undefined,
       options,
-    });
-    reset();
-    setOptions([]);
+    };
+
+    if (editingMenuId) {
+      await api.updateMenu(bot.id, editingMenuId, payload);
+    } else {
+      await api.createMenu(bot.id, payload);
+    }
+
+    resetFormState();
     setShowAdd(false);
     load();
+  };
+
+  const onStartEditMenu = (menu: InteractiveMenu) => {
+    setShowAdd(true);
+    setEditingMenuId(menu.id);
+    reset({
+      trigger: menu.trigger,
+      title: menu.title,
+      body: menu.body || '',
+      footer: menu.footer || '',
+    });
+    setOptions(menu.options || []);
   };
 
   const onDeleteMenu = async (menuId: string) => {
@@ -262,7 +315,7 @@ function MenusModal({ open, onClose, bot }: { open: boolean; onClose: () => void
   return (
     <Modal open={open} onClose={onClose} title={`Menus Interativos - ${bot.name}`} wide>
       {showAdd ? (
-        <form onSubmit={handleSubmit(onAdd)}>
+        <form onSubmit={handleSubmit(onSubmitMenu)}>
           <div className="grid grid-cols-2 gap-4 mb-4">
             <FormField label="Trigger (palavra-chave)">
               <input {...register('trigger', { required: true })} placeholder="Ex: menu, opções" className={inputClass} />
@@ -287,14 +340,20 @@ function MenusModal({ open, onClose, bot }: { open: boolean; onClose: () => void
               <input value={optDesc} onChange={(e) => setOptDesc(e.target.value)} placeholder="Descrição (opcional)" className={inputClass + ' col-span-2'} />
               <button type="button" onClick={addOption} className={btnPrimary + ' shrink-0 justify-center'}><Plus className="w-4 h-4" /></button>
             </div>
-            <div className="grid grid-cols-2 gap-3 mb-3">
+            <div className="grid grid-cols-2 gap-3 mb-2">
               <select value={optGotoType} onChange={(e) => setOptGotoType(e.target.value as GotoTarget['type'] | '')} className={inputClass}>
                 <option value="">Sem goto</option>
                 <option value="MENU">Goto Menu</option>
                 <option value="KEYWORD">Goto Keyword</option>
               </select>
-              <input value={optGotoTarget} onChange={(e) => setOptGotoTarget(e.target.value)} placeholder="Trigger destino (menu/keyword)" className={inputClass} />
+              <input value={optGotoTarget} list="goto-targets" onChange={(e) => setOptGotoTarget(e.target.value)} placeholder="Trigger destino (menu/keyword)" className={inputClass} />
             </div>
+            <datalist id="goto-targets">
+              {currentGotoSuggestions.map((trigger) => (
+                <option key={trigger} value={trigger} />
+              ))}
+            </datalist>
+            <p className="text-xs text-[var(--color-text-muted)] mb-3">Sugestões de trigger carregadas de menus e keywords já cadastrados.</p>
             <div className="space-y-2 max-h-[200px] overflow-y-auto">
               {options.map((opt, i) => (
                 <div key={opt.id} className="flex items-center justify-between p-3 rounded-lg bg-[var(--color-bg-tertiary)]">
@@ -311,14 +370,14 @@ function MenusModal({ open, onClose, bot }: { open: boolean; onClose: () => void
           </div>
 
           <div className="flex justify-end gap-3 mt-6">
-            <button type="button" onClick={() => { setShowAdd(false); reset(); setOptions([]); }} className={btnSecondary}>Cancelar</button>
-            <button type="submit" disabled={options.length === 0} className={btnPrimary}>Criar Menu</button>
+            <button type="button" onClick={() => { setShowAdd(false); resetFormState(); }} className={btnSecondary}>Cancelar</button>
+            <button type="submit" disabled={options.length === 0} className={btnPrimary}>{editingMenuId ? 'Salvar alterações' : 'Criar Menu'}</button>
           </div>
         </form>
       ) : (
         <>
           <div className="flex justify-end mb-5">
-            <button onClick={() => setShowAdd(true)} className={btnPrimary}><Plus className="w-4 h-4" /> Novo Menu</button>
+            <button onClick={() => { resetFormState(); setShowAdd(true); }} className={btnPrimary}><Plus className="w-4 h-4" /> Novo Menu</button>
           </div>
           <div className="space-y-3 max-h-[400px] overflow-y-auto">
             {loading ? <p className="text-sm text-[var(--color-text-muted)]">Carregando...</p> :
@@ -330,7 +389,10 @@ function MenusModal({ open, onClose, bot }: { open: boolean; onClose: () => void
                       <span className="text-xs px-2.5 py-1 rounded-full bg-[var(--color-accent-glow)] text-[var(--color-accent)] font-medium">{menu.trigger}</span>
                       <span className="text-sm font-semibold text-[var(--color-text-primary)]">{menu.title}</span>
                     </div>
-                    <button onClick={() => onDeleteMenu(menu.id)} className="text-red-400 hover:text-red-300 cursor-pointer p-2 rounded-lg hover:bg-red-500/10 transition-all"><Trash2 className="w-4 h-4" /></button>
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => onStartEditMenu(menu)} className="text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] cursor-pointer p-2 rounded-lg hover:bg-[var(--color-bg-hover)] transition-all"><Pencil className="w-4 h-4" /></button>
+                      <button onClick={() => onDeleteMenu(menu.id)} className="text-red-400 hover:text-red-300 cursor-pointer p-2 rounded-lg hover:bg-red-500/10 transition-all"><Trash2 className="w-4 h-4" /></button>
+                    </div>
                   </div>
                   <div className="space-y-1.5">
                     {(menu.options || []).map((opt, i) => (

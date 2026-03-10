@@ -77,6 +77,7 @@ model Bot {
   id           String          @id @default(uuid())
   userId       String
   name         String
+  initialMessage String?       @db.Text
   responseMode BotResponseMode @default(KEYWORDS)
   isActive     Boolean         @default(true)
   systemPrompt String?         @db.Text // Prompt de sistema para IA

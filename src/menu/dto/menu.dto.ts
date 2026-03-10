@@ -1,5 +1,25 @@
-import { IsString, IsOptional, IsBoolean, IsArray, ValidateNested } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsBoolean,
+  IsArray,
+  ValidateNested,
+  IsEnum,
+} from 'class-validator';
 import { Type } from 'class-transformer';
+
+export enum GotoTargetType {
+  MENU = 'MENU',
+  KEYWORD = 'KEYWORD',
+}
+
+export class GotoTargetDto {
+  @IsEnum(GotoTargetType)
+  type: GotoTargetType;
+
+  @IsString()
+  target: string;
+}
 
 export class MenuOptionDto {
   @IsString()
@@ -11,6 +31,11 @@ export class MenuOptionDto {
   @IsString()
   @IsOptional()
   description?: string;
+
+  @ValidateNested()
+  @Type(() => GotoTargetDto)
+  @IsOptional()
+  goto?: GotoTargetDto;
 }
 
 export class CreateMenuDto {

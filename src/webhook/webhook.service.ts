@@ -10,6 +10,24 @@ import { Dialog360Service } from '../services/dialog360.service';
 
 type MessageStatus = 'SENT' | 'DELIVERED' | 'READ' | 'FAILED';
 
+type GotoConfig = {
+  type: 'MENU' | 'KEYWORD';
+  target: string;
+};
+
+type FlowStep = {
+  type: 'GOTO_MENU';
+  menuTrigger: string;
+};
+
+type FlowConfig = {
+  steps?: FlowStep[];
+  fallback?: {
+    message: string;
+    goto?: GotoConfig;
+  };
+};
+
 @Injectable()
 export class WebhookService {
   private readonly logger = new Logger(WebhookService.name);
@@ -25,6 +43,11 @@ export class WebhookService {
     private dialog360: Dialog360Service,
   ) {}
 
+  private parseFlowConfig(raw: unknown): FlowConfig {
+    if (!raw || typeof raw !== 'object') return {};
+    return raw as FlowConfig;
+  }
+
   /** Gera resposta via IA usando o provedor configurado no bot */
   private async generateAIResponse(
     bot: any,
@@ -33,7 +56,6 @@ export class WebhookService {
   ): Promise<string> {
     const aiConfig = bot.aiConfig;
 
-    // Se o bot tem uma configuração de IA vinculada, usa ela
     if (aiConfig) {
       switch (aiConfig.provider) {
         case 'OPENAI':
@@ -66,12 +88,137 @@ export class WebhookService {
       }
     }
 
-    // Fallback: usa Claude com configuração padrão do ambiente
     return this.claudeService.generateResponse(
       conversationId,
       text,
       bot.systemPrompt || undefined,
     );
+  }
+
+  private async sendMenu(
+    botId: string,
+    apiKey: string,
+    to: string,
+    conversationId: string,
+    menuTrigger: string,
+  ) {
+    const menu = await this.menuService.findByTrigger(botId, menuTrigger);
+    if (!menu) throw new Error(`Menu '${menuTrigger}' não encontrado`);
+
+    const options = menu.options as Array<{ id: string; title: string; description?: string }>;
+    const result = await this.dialog360.sendInteractiveListMessage(
+      apiKey,
+      to,
+      menu.title,
+      menu.body || menu.title,
+      menu.footer || undefined,
+      'Ver opções',
+      [{ title: menu.title, rows: options.map((o) => ({ id: o.id, title: o.title, description: o.description })) }],
+    );
+
+    const menuText = `📋 ${menu.title}\n${options.map((o, i) => `${i + 1}. ${o.title}${o.description ? ' - ' + o.description : ''}`).join('\n')}`;
+    await this.conversationService.saveMessage(
+      conversationId,
+      'OUTBOUND',
+      menuText,
+      result?.messages?.[0]?.id,
+    );
+  }
+
+  private async executeGoto(
+    botId: string,
+    apiKey: string,
+    to: string,
+    conversationId: string,
+    goto?: GotoConfig,
+  ) {
+    if (!goto) return false;
+
+    if (goto.type === 'MENU') {
+      await this.sendMenu(botId, apiKey, to, conversationId, goto.target);
+      return true;
+    }
+
+    if (goto.type === 'KEYWORD') {
+      const keyword = await this.keywordService.findByExactTrigger(botId, goto.target);
+      if (!keyword) throw new Error(`Keyword '${goto.target}' não encontrada`);
+
+      const result = await this.dialog360.sendTextMessage(apiKey, to, keyword.response);
+      await this.conversationService.saveMessage(
+        conversationId,
+        'OUTBOUND',
+        keyword.response,
+        result?.messages?.[0]?.id,
+      );
+      return true;
+    }
+
+    return false;
+  }
+
+  private async executeFallback(
+    bot: any,
+    from: string,
+    conversationId: string,
+    reason: string,
+  ) {
+    const flow = this.parseFlowConfig(bot.flowConfig);
+    const fallback = flow.fallback;
+    const apiKey = bot.whatsappChannel.dialog360ApiKey;
+
+    if (!fallback?.message) {
+      this.logger.warn(`Falha no fluxo sem fallback configurado: ${reason}`);
+      return;
+    }
+
+    const result = await this.dialog360.sendTextMessage(apiKey, from, fallback.message);
+    await this.conversationService.saveMessage(
+      conversationId,
+      'OUTBOUND',
+      fallback.message,
+      result?.messages?.[0]?.id,
+    );
+
+    if (fallback.goto) {
+      await this.executeGoto(bot.id, apiKey, from, conversationId, fallback.goto);
+    }
+  }
+
+  private async processConfiguredFlowStep(
+    bot: any,
+    from: string,
+    conversation: any,
+  ): Promise<boolean> {
+    const flow = this.parseFlowConfig(bot.flowConfig);
+    const steps = flow.steps || [];
+
+    if (!steps.length) return false;
+
+    const step = steps[conversation.flowStepIndex];
+    if (!step) return false;
+
+    try {
+      if (step.type === 'GOTO_MENU') {
+        await this.sendMenu(
+          bot.id,
+          bot.whatsappChannel.dialog360ApiKey,
+          from,
+          conversation.id,
+          step.menuTrigger,
+        );
+
+        await this.prisma.conversation.update({
+          where: { id: conversation.id },
+          data: { flowStepIndex: conversation.flowStepIndex + 1 },
+        });
+        return true;
+      }
+    } catch (error) {
+      await this.executeFallback(bot, from, conversation.id, error.message);
+      return true;
+    }
+
+    return false;
   }
 
   async processIncomingMessage(
@@ -82,7 +229,6 @@ export class WebhookService {
     contactName?: string,
   ) {
     try {
-      // 1. Busca o bot e canal (incluindo aiConfig)
       const bot = await this.prisma.bot.findUnique({
         where: { id: botId },
         include: { whatsappChannel: true, aiConfig: true },
@@ -94,18 +240,14 @@ export class WebhookService {
       }
 
       const apiKey = bot.whatsappChannel.dialog360ApiKey;
-
-      // 2. Marca como lida
       await this.dialog360.markAsRead(apiKey, messageId);
 
-      // 3. Busca/cria conversa
       const conversation = await this.conversationService.getOrCreate(
         botId,
         from,
         contactName,
       );
 
-      // 4. Salva mensagem recebida
       await this.conversationService.saveMessage(
         conversation.id,
         'INBOUND',
@@ -113,33 +255,23 @@ export class WebhookService {
         messageId,
       );
 
-      // 5. Check for interactive menu match first (works in all modes)
+      const handledByFlow = await this.processConfiguredFlowStep(bot, from, conversation);
+      if (handledByFlow) return;
+
       const menuMatch = await this.menuService.findMenuMatch(botId, text);
       if (menuMatch) {
-        const { menu, options } = menuMatch;
-        const result = await this.dialog360.sendInteractiveListMessage(
-          apiKey,
-          from,
-          menu.title,
-          menu.body || menu.title,
-          menu.footer || undefined,
-          'Ver opções',
-          [{ title: menu.title, rows: options.map((o) => ({ id: o.id, title: o.title, description: o.description })) }],
-        );
-
-        const menuText = `📋 ${menu.title}\n${options.map((o, i) => `${i + 1}. ${o.title}${o.description ? ' - ' + o.description : ''}`).join('\n')}`;
-        await this.conversationService.saveMessage(
-          conversation.id,
-          'OUTBOUND',
-          menuText,
-          result?.messages?.[0]?.id,
-        );
+        const { menu } = menuMatch;
+        await this.sendMenu(botId, apiKey, from, conversation.id, menu.trigger);
         return;
       }
 
-      // 6. Check if this is a menu option response
       const optionMatch = await this.menuService.findOptionResponse(botId, text);
       if (optionMatch) {
+        if (optionMatch.option.goto) {
+          await this.executeGoto(botId, apiKey, from, conversation.id, optionMatch.option.goto);
+          return;
+        }
+
         const responseText = `Você selecionou: ${optionMatch.option.title}`;
         const result = await this.dialog360.sendTextMessage(apiKey, from, responseText);
         await this.conversationService.saveMessage(
@@ -151,7 +283,6 @@ export class WebhookService {
         return;
       }
 
-      // 7. Gera resposta baseado no modo do bot
       let responseText: string | null = null;
 
       switch (bot.responseMode) {
@@ -174,11 +305,9 @@ export class WebhookService {
           break;
       }
 
-      // 8. Envia resposta via Dialog360
       if (responseText) {
         const result = await this.dialog360.sendTextMessage(apiKey, from, responseText);
 
-        // 9. Salva mensagem enviada
         await this.conversationService.saveMessage(
           conversation.id,
           'OUTBOUND',
@@ -191,7 +320,6 @@ export class WebhookService {
     }
   }
 
-  /** Process interactive message responses (button replies and list selections) */
   async processInteractiveResponse(
     botId: string,
     from: string,
@@ -214,7 +342,6 @@ export class WebhookService {
 
       const conversation = await this.conversationService.getOrCreate(botId, from, contactName);
 
-      // Save the user's selection as an inbound message
       await this.conversationService.saveMessage(
         conversation.id,
         'INBOUND',
@@ -222,8 +349,16 @@ export class WebhookService {
         messageId,
       );
 
-      // Find the option and respond
       const optionMatch = await this.menuService.findOptionResponse(botId, selectedId);
+      if (optionMatch?.option.goto) {
+        try {
+          await this.executeGoto(botId, apiKey, from, conversation.id, optionMatch.option.goto);
+        } catch (error) {
+          await this.executeFallback(bot, from, conversation.id, error.message);
+        }
+        return;
+      }
+
       const responseText = optionMatch
         ? `Você selecionou: ${optionMatch.option.title}${optionMatch.option.description ? '\n' + optionMatch.option.description : ''}`
         : `Opção selecionada: ${selectedTitle}`;

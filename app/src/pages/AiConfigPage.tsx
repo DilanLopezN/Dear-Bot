@@ -145,7 +145,7 @@ function ConfigFormModal({ open, onClose, config, onSaved }: { open: boolean; on
     setSaving(true);
     try {
       if (config) {
-        await api.updateAiConfig(config.id, data);
+        await api.updateAiConfig(config.id, data as unknown as Record<string, unknown>);
       } else {
         await api.createAiConfig(data);
       }

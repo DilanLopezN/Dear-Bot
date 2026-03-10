@@ -1,4 +1,4 @@
-import axios, { AxiosInstance } from 'axios';
+import axios, { AxiosInstance, AxiosError } from 'axios';
 
 export interface DashboardOverview {
   totals: {
@@ -81,6 +81,21 @@ export interface InteractiveMenu {
   createdAt: string;
 }
 
+/** Extrai a mensagem de erro de uma resposta axios de forma legível */
+export function extractApiError(err: unknown): string {
+  if (err instanceof AxiosError) {
+    const data = err.response?.data;
+    if (data) {
+      if (typeof data.message === 'string') return data.message;
+      if (Array.isArray(data.message)) return data.message.join('; ');
+      if (typeof data.error === 'string') return data.error;
+    }
+    if (err.message) return err.message;
+  }
+  if (err instanceof Error) return err.message;
+  return 'Erro desconhecido';
+}
+
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 class ApiService {
@@ -97,7 +112,7 @@ class ApiService {
 
     this.client.interceptors.response.use(
       (res) => res,
-      (err) => {
+      (err: AxiosError) => {
         if (err.response?.status === 401) {
           localStorage.removeItem('access_token');
           window.location.hash = '#/login';

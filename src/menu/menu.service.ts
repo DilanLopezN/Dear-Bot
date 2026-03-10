@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { BotService } from '../bot/bot.service';
 import { CreateMenuDto, UpdateMenuDto } from './dto/menu.dto';
@@ -15,23 +15,31 @@ export interface MenuOption {
 
 @Injectable()
 export class MenuService {
+  private readonly logger = new Logger(MenuService.name);
+
   constructor(
     private prisma: PrismaService,
     private botService: BotService,
   ) {}
 
   async create(userId: string, botId: string, dto: CreateMenuDto) {
-    await this.botService.findOne(userId, botId);
-    return this.prisma.interactiveMenu.create({
-      data: {
-        botId,
-        trigger: dto.trigger,
-        title: dto.title,
-        body: dto.body,
-        footer: dto.footer,
-        options: dto.options as any,
-      },
-    });
+    this.logger.log(`Criando menu "${dto.title}" (trigger: ${dto.trigger}) no bot ${botId}`);
+    try {
+      await this.botService.findOne(userId, botId);
+      return await this.prisma.interactiveMenu.create({
+        data: {
+          botId,
+          trigger: dto.trigger,
+          title: dto.title,
+          body: dto.body,
+          footer: dto.footer,
+          options: dto.options as any,
+        },
+      });
+    } catch (err) {
+      this.logger.error(`Erro ao criar menu no bot ${botId}`, err);
+      throw err;
+    }
   }
 
   async findAll(userId: string, botId: string) {
@@ -43,21 +51,33 @@ export class MenuService {
   }
 
   async update(userId: string, botId: string, menuId: string, dto: UpdateMenuDto) {
-    await this.botService.findOne(userId, botId);
-    const menu = await this.prisma.interactiveMenu.findFirst({ where: { id: menuId, botId } });
-    if (!menu) throw new NotFoundException('Menu não encontrado');
-    return this.prisma.interactiveMenu.update({
-      where: { id: menuId },
-      data: {
-        ...dto,
-        options: dto.options ? (dto.options as any) : undefined,
-      },
-    });
+    this.logger.log(`Atualizando menu ${menuId} no bot ${botId}`);
+    try {
+      await this.botService.findOne(userId, botId);
+      const menu = await this.prisma.interactiveMenu.findFirst({ where: { id: menuId, botId } });
+      if (!menu) throw new NotFoundException('Menu não encontrado');
+      return await this.prisma.interactiveMenu.update({
+        where: { id: menuId },
+        data: {
+          ...dto,
+          options: dto.options ? (dto.options as any) : undefined,
+        },
+      });
+    } catch (err) {
+      this.logger.error(`Erro ao atualizar menu ${menuId}`, err);
+      throw err;
+    }
   }
 
   async remove(userId: string, botId: string, menuId: string) {
-    await this.botService.findOne(userId, botId);
-    return this.prisma.interactiveMenu.delete({ where: { id: menuId } });
+    this.logger.log(`Removendo menu ${menuId} do bot ${botId}`);
+    try {
+      await this.botService.findOne(userId, botId);
+      return await this.prisma.interactiveMenu.delete({ where: { id: menuId } });
+    } catch (err) {
+      this.logger.error(`Erro ao remover menu ${menuId}`, err);
+      throw err;
+    }
   }
 
   async findByTrigger(botId: string, trigger: string) {
@@ -70,7 +90,6 @@ export class MenuService {
     });
   }
 
-  /** Finds a menu matching the user message (case-insensitive) */
   async findMenuMatch(botId: string, message: string): Promise<{ menu: any; options: MenuOption[] } | null> {
     const menus = await this.prisma.interactiveMenu.findMany({
       where: { botId, isActive: true },
@@ -85,7 +104,6 @@ export class MenuService {
     return null;
   }
 
-  /** Finds a menu option response by option ID */
   async findOptionResponse(botId: string, optionId: string): Promise<{ menu: any; option: MenuOption } | null> {
     const menus = await this.prisma.interactiveMenu.findMany({
       where: { botId, isActive: true },

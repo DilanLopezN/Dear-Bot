@@ -37,6 +37,13 @@ enum AiProvider {
   GEMINI
 }
 
+enum VariableType {
+  STRING
+  NUMBER
+  BOOLEAN
+  DATE
+}
+
 model User {
   id               String   @id @default(uuid())
   email            String   @unique
@@ -97,16 +104,17 @@ model Bot {
 }
 
 model InteractiveMenu {
-  id          String   @id @default(uuid())
-  botId       String
-  trigger     String   // Keyword or command that activates this menu
-  title       String   // Menu title/header
-  body        String?  @db.Text // Menu body text
-  footer      String?  // Menu footer text
-  options     Json     // Array of { id: string, title: string, description?: string }
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id              String   @id @default(uuid())
+  botId           String
+  trigger         String   // Keyword or command that activates this menu
+  title           String   // Menu title/header
+  body            String?  @db.Text // Menu body text
+  footer          String?  // Menu footer text
+  options         Json     // Array of { id: string, title: string, description?: string }
+  captureVariable Json?    // { name: string, type: VariableType, promptMessage: string } - captura de variável
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   bot Bot @relation(fields: [botId], references: [id], onDelete: Cascade)
 
@@ -130,15 +138,16 @@ model WhatsappChannel {
 }
 
 model Keyword {
-  id        String   @id @default(uuid())
-  botId     String
-  trigger   String   // Palavra/frase que ativa a resposta
-  response  String   @db.Text // Resposta fixa
-  priority  Int      @default(0)
-  isActive  Boolean  @default(true)
-  goto      Json?    // { type: 'MENU' | 'KEYWORD', target: string } - navegação após resposta
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id              String   @id @default(uuid())
+  botId           String
+  trigger         String   // Palavra/frase que ativa a resposta
+  response        String   @db.Text // Resposta fixa
+  priority        Int      @default(0)
+  isActive        Boolean  @default(true)
+  goto            Json?    // { type: 'MENU' | 'KEYWORD', target: string } - navegação após resposta
+  captureVariable Json?    // { name: string, type: VariableType, promptMessage: string } - captura de variável
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   bot Bot @relation(fields: [botId], references: [id], onDelete: Cascade)
 
@@ -147,20 +156,40 @@ model Keyword {
 }
 
 model Conversation {
-  id             String   @id @default(uuid())
-  botId          String
-  contactPhone   String
-  contactName    String?
-  isActive       Boolean  @default(true)
-  flowStepIndex  Int      @default(0)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id                    String   @id @default(uuid())
+  botId                 String
+  contactPhone          String
+  contactName           String?
+  isActive              Boolean  @default(true)
+  flowStepIndex         Int      @default(0)
+  waitingForVariable    Boolean  @default(false)
+  pendingVariableName   String?
+  pendingVariableType   VariableType?
+  pendingVariableGoto   Json?    // goto a executar após captura da variável
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 
-  bot      Bot       @relation(fields: [botId], references: [id], onDelete: Cascade)
-  messages Message[]
+  bot       Bot                   @relation(fields: [botId], references: [id], onDelete: Cascade)
+  messages  Message[]
+  variables ConversationVariable[]
 
   @@unique([botId, contactPhone])
   @@map("conversations")
+}
+
+model ConversationVariable {
+  id             String       @id @default(uuid())
+  conversationId String
+  name           String
+  type           VariableType
+  value          String       @db.Text
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, name])
+  @@map("conversation_variables")
 }
 
 model Message {

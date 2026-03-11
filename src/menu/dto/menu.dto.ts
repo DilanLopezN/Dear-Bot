@@ -13,12 +13,30 @@ export enum GotoTargetType {
   KEYWORD = 'KEYWORD',
 }
 
+export enum VariableTypeDto {
+  STRING = 'STRING',
+  NUMBER = 'NUMBER',
+  BOOLEAN = 'BOOLEAN',
+  DATE = 'DATE',
+}
+
 export class GotoTargetDto {
   @IsEnum(GotoTargetType)
   type: GotoTargetType;
 
   @IsString()
   target: string;
+}
+
+export class CaptureVariableDto {
+  @IsString()
+  name: string;
+
+  @IsEnum(VariableTypeDto)
+  type: VariableTypeDto;
+
+  @IsString()
+  promptMessage: string;
 }
 
 export class MenuOptionDto {
@@ -57,6 +75,11 @@ export class CreateMenuDto {
   @ValidateNested({ each: true })
   @Type(() => MenuOptionDto)
   options: MenuOptionDto[];
+
+  @ValidateNested()
+  @Type(() => CaptureVariableDto)
+  @IsOptional()
+  captureVariable?: CaptureVariableDto;
 }
 
 export class UpdateMenuDto {
@@ -81,6 +104,11 @@ export class UpdateMenuDto {
   @ValidateNested({ each: true })
   @Type(() => MenuOptionDto)
   options?: MenuOptionDto[];
+
+  @ValidateNested()
+  @Type(() => CaptureVariableDto)
+  @IsOptional()
+  captureVariable?: CaptureVariableDto | null;
 
   @IsBoolean()
   @IsOptional()

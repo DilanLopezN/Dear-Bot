@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { BotService } from '../bot/bot.service';
 import { CreateMenuDto, UpdateMenuDto } from './dto/menu.dto';
+import { CaptureVariableConfig } from '../keyword/keyword.service';
 
 export interface MenuOption {
   id: string;
@@ -34,6 +35,7 @@ export class MenuService {
           body: dto.body,
           footer: dto.footer,
           options: dto.options as any,
+          captureVariable: dto.captureVariable ? (dto.captureVariable as any) : undefined,
         },
       });
     } catch (err) {
@@ -56,11 +58,14 @@ export class MenuService {
       await this.botService.findOne(userId, botId);
       const menu = await this.prisma.interactiveMenu.findFirst({ where: { id: menuId, botId } });
       if (!menu) throw new NotFoundException('Menu não encontrado');
+
+      const { captureVariable, ...rest } = dto;
       return await this.prisma.interactiveMenu.update({
         where: { id: menuId },
         data: {
-          ...dto,
+          ...rest,
           options: dto.options ? (dto.options as any) : undefined,
+          captureVariable: captureVariable === null ? null : captureVariable ? (captureVariable as any) : undefined,
         },
       });
     } catch (err) {
@@ -90,7 +95,7 @@ export class MenuService {
     });
   }
 
-  async findMenuMatch(botId: string, message: string): Promise<{ menu: any; options: MenuOption[] } | null> {
+  async findMenuMatch(botId: string, message: string): Promise<{ menu: any; options: MenuOption[]; captureVariable?: CaptureVariableConfig } | null> {
     const menus = await this.prisma.interactiveMenu.findMany({
       where: { botId, isActive: true },
     });
@@ -98,7 +103,11 @@ export class MenuService {
     const normalized = message.toLowerCase().trim();
     for (const menu of menus) {
       if (normalized.includes(menu.trigger.toLowerCase())) {
-        return { menu, options: menu.options as unknown as MenuOption[] };
+        return {
+          menu,
+          options: menu.options as unknown as MenuOption[],
+          captureVariable: menu.captureVariable as unknown as CaptureVariableConfig | undefined,
+        };
       }
     }
     return null;

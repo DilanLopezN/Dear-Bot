@@ -20,4 +20,9 @@ export class ConversationController {
   ) {
     return this.service.getMessages(conversationId, take ? parseInt(take) : 50);
   }
+
+  @Get(':conversationId/variables')
+  getVariables(@Param('conversationId') conversationId: string) {
+    return this.service.getVariables(conversationId);
+  }
 }

@@ -6,12 +6,30 @@ export enum GotoTargetType {
   KEYWORD = 'KEYWORD',
 }
 
+export enum VariableTypeDto {
+  STRING = 'STRING',
+  NUMBER = 'NUMBER',
+  BOOLEAN = 'BOOLEAN',
+  DATE = 'DATE',
+}
+
 export class GotoTargetDto {
   @IsEnum(GotoTargetType)
   type: GotoTargetType;
 
   @IsString()
   target: string;
+}
+
+export class CaptureVariableDto {
+  @IsString()
+  name: string;
+
+  @IsEnum(VariableTypeDto)
+  type: VariableTypeDto;
+
+  @IsString()
+  promptMessage: string;
 }
 
 export class CreateKeywordDto {
@@ -29,6 +47,11 @@ export class CreateKeywordDto {
   @Type(() => GotoTargetDto)
   @IsOptional()
   goto?: GotoTargetDto;
+
+  @ValidateNested()
+  @Type(() => CaptureVariableDto)
+  @IsOptional()
+  captureVariable?: CaptureVariableDto;
 }
 
 export class UpdateKeywordDto {
@@ -52,4 +75,9 @@ export class UpdateKeywordDto {
   @Type(() => GotoTargetDto)
   @IsOptional()
   goto?: GotoTargetDto | null;
+
+  @ValidateNested()
+  @Type(() => CaptureVariableDto)
+  @IsOptional()
+  captureVariable?: CaptureVariableDto | null;
 }

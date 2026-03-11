@@ -8,9 +8,16 @@ export interface KeywordGoto {
   target: string;
 }
 
+export interface CaptureVariableConfig {
+  name: string;
+  type: 'STRING' | 'NUMBER' | 'BOOLEAN' | 'DATE';
+  promptMessage: string;
+}
+
 export interface KeywordMatchResult {
   response: string;
   goto?: KeywordGoto;
+  captureVariable?: CaptureVariableConfig;
 }
 
 @Injectable()
@@ -33,6 +40,7 @@ export class KeywordService {
           response: dto.response,
           priority: dto.priority,
           goto: dto.goto ? (dto.goto as any) : undefined,
+          captureVariable: dto.captureVariable ? (dto.captureVariable as any) : undefined,
         },
       });
     } catch (err) {
@@ -55,11 +63,14 @@ export class KeywordService {
       await this.botService.findOne(userId, botId);
       const keyword = await this.prisma.keyword.findFirst({ where: { id: keywordId, botId } });
       if (!keyword) throw new NotFoundException('Keyword não encontrada');
+
+      const { captureVariable, ...rest } = dto;
       return await this.prisma.keyword.update({
         where: { id: keywordId },
         data: {
-          ...dto,
+          ...rest,
           goto: dto.goto === null ? null : dto.goto ? (dto.goto as any) : undefined,
+          captureVariable: captureVariable === null ? null : captureVariable ? (captureVariable as any) : undefined,
         },
       });
     } catch (err) {
@@ -102,6 +113,7 @@ export class KeywordService {
         return {
           response: kw.response,
           goto: kw.goto as unknown as KeywordGoto | undefined,
+          captureVariable: kw.captureVariable as unknown as CaptureVariableConfig | undefined,
         };
       }
     }

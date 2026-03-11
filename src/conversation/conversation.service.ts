@@ -58,6 +58,19 @@ export class ConversationService {
     }
   }
 
+  /** Busca variáveis capturadas de uma conversa */
+  async getVariables(conversationId: string) {
+    try {
+      return await this.prisma.conversationVariable.findMany({
+        where: { conversationId },
+        orderBy: { createdAt: 'asc' },
+      });
+    } catch (err) {
+      this.logger.error(`Erro ao buscar variáveis da conversa ${conversationId}: ${err.message}`, err.stack);
+      throw err;
+    }
+  }
+
   /** Salva mensagem */
   async saveMessage(
     conversationId: string,

@@ -1,4 +1,4 @@
-import { IsString, IsEnum, IsOptional, IsBoolean, IsObject } from 'class-validator';
+import { IsString, IsEnum, IsOptional, IsBoolean, IsObject, ValidateIf } from 'class-validator';
 
 export enum BotResponseMode {
   KEYWORDS = 'KEYWORDS',
@@ -52,11 +52,13 @@ export class UpdateBotDto {
   @IsOptional()
   systemPrompt?: string;
 
+  @ValidateIf((_obj, value) => value !== null)
   @IsString()
   @IsOptional()
-  aiConfigId?: string;
+  aiConfigId?: string | null;
 
+  @ValidateIf((_obj, value) => value !== null)
   @IsObject()
   @IsOptional()
-  flowConfig?: Record<string, any>;
+  flowConfig?: Record<string, any> | null;
 }

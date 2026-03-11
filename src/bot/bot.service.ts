@@ -1,16 +1,24 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateBotDto, UpdateBotDto } from './dto/bot.dto';
 
 @Injectable()
 export class BotService {
+  private readonly logger = new Logger(BotService.name);
+
   constructor(private prisma: PrismaService) {}
 
   async create(userId: string, dto: CreateBotDto) {
-    return this.prisma.bot.create({
-      data: { ...dto, userId },
-      include: { whatsappChannel: true, aiConfig: true },
-    });
+    this.logger.log(`Criando bot para usuário ${userId}: ${dto.name}`);
+    try {
+      return await this.prisma.bot.create({
+        data: { ...dto, userId },
+        include: { whatsappChannel: true, aiConfig: true },
+      });
+    } catch (err) {
+      this.logger.error(`Erro ao criar bot para usuário ${userId}`, err);
+      throw err;
+    }
   }
 
   async findAll(userId: string) {
@@ -96,7 +104,6 @@ export class BotService {
     };
   }
 
-  /** Analytics: per-bot stats with real data from DB */
   async getReportsAnalytics(userId: string) {
     const bots = await this.prisma.bot.findMany({
       where: { userId },
@@ -118,14 +125,12 @@ export class BotService {
       }),
     );
 
-    // Mode distribution
     const modes: Record<string, number> = {};
     bots.forEach((bot) => {
       modes[bot.responseMode] = (modes[bot.responseMode] || 0) + 1;
     });
     const modeDistribution = Object.entries(modes).map(([name, value]) => ({ name, value }));
 
-    // Totals
     const totalConversas = botStats.reduce((a, b) => a + b.conversas, 0);
     const totalMensagens = botStats.reduce((a, b) => a + b.mensagens, 0);
 
@@ -141,7 +146,6 @@ export class BotService {
     };
   }
 
-  /** Analytics: monthly metrics for the last 30 days */
   async getMonthlyMetrics(userId: string) {
     const monthStart = new Date();
     monthStart.setHours(0, 0, 0, 0);
@@ -194,21 +198,41 @@ export class BotService {
       include: { whatsappChannel: true, keywords: true, aiConfig: true },
     });
     if (!bot) throw new NotFoundException('Bot não encontrado');
-    if (bot.userId !== userId) throw new ForbiddenException();
+    if (bot.userId !== userId) throw new ForbiddenException('Acesso negado a este bot');
     return bot;
   }
 
   async update(userId: string, botId: string, dto: UpdateBotDto) {
-    await this.findOne(userId, botId);
-    return this.prisma.bot.update({
-      where: { id: botId },
-      data: dto,
-      include: { whatsappChannel: true, aiConfig: true },
-    });
+    this.logger.log(`Atualizando bot ${botId} para usuário ${userId}`);
+    try {
+      await this.findOne(userId, botId);
+
+      // Tratar aiConfigId: null para desconectar a relação corretamente
+      const { aiConfigId, ...rest } = dto as any;
+      const updateData: Record<string, any> = { ...rest };
+      if (aiConfigId !== undefined) {
+        updateData.aiConfigId = aiConfigId || null;
+      }
+
+      return await this.prisma.bot.update({
+        where: { id: botId },
+        data: updateData,
+        include: { whatsappChannel: true, aiConfig: true },
+      });
+    } catch (err) {
+      this.logger.error(`Erro ao atualizar bot ${botId}`, err);
+      throw err;
+    }
   }
 
   async remove(userId: string, botId: string) {
-    await this.findOne(userId, botId);
-    return this.prisma.bot.delete({ where: { id: botId } });
+    this.logger.log(`Removendo bot ${botId} para usuário ${userId}`);
+    try {
+      await this.findOne(userId, botId);
+      return await this.prisma.bot.delete({ where: { id: botId } });
+    } catch (err) {
+      this.logger.error(`Erro ao remover bot ${botId}`, err);
+      throw err;
+    }
   }
 }

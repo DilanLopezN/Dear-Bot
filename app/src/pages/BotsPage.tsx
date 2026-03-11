@@ -1,7 +1,8 @@
 import { useEffect, useState, useRef, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { useBotStore, type Bot } from '@/stores/bot.store';
-import { api, type InteractiveMenu, type MenuOption, type FlowConfig, type GotoTarget, type Keyword } from '@/services/api';
+import { api, extractApiError, type InteractiveMenu, type MenuOption, type FlowConfig, type GotoTarget, type Keyword } from '@/services/api';
+import { toast } from 'sonner';
 import {
   Plus, Trash2, Pencil, Zap, Key, X, Power, PowerOff,
   MessageSquare, Bot as BotIcon, Phone, Loader2, Send,
@@ -78,11 +79,18 @@ function GotoSelector({
         {gotoType ? (
           <select value={gotoTarget} onChange={(e) => onTargetChange(e.target.value)} className={inputClass}>
             <option value="">Selecione...</option>
-            {targets.map((t) => (
-              <option key={'trigger' in t ? t.trigger : t.trigger} value={'trigger' in t ? t.trigger : t.trigger}>
-                {'title' in t ? `${t.trigger} - ${t.title}` : `${t.trigger} → ${t.response.substring(0, 30)}...`}
-              </option>
-            ))}
+            {gotoType === 'MENU'
+              ? (targets as InteractiveMenu[]).map((t) => (
+                  <option key={t.trigger} value={t.trigger}>
+                    {t.trigger} — {t.title}
+                  </option>
+                ))
+              : (targets as Keyword[]).map((t) => (
+                  <option key={t.trigger} value={t.trigger}>
+                    {t.trigger} → {t.response.substring(0, 40)}{t.response.length > 40 ? '...' : ''}
+                  </option>
+                ))
+            }
           </select>
         ) : (
           <div className="px-4 py-3 rounded-xl bg-[var(--color-bg-input)] border border-[var(--color-border)] text-sm text-[var(--color-text-muted)]">
@@ -179,11 +187,16 @@ function BotFormModal({ open, onClose, bot }: { open: boolean; onClose: () => vo
         flowConfig: Object.keys(flowConfig).length > 0 ? flowConfig : undefined,
       };
 
-      if (bot) await updateBot(bot.id, payload);
-      else await createBot(payload);
+      if (bot) {
+        await updateBot(bot.id, payload);
+        toast.success('Bot atualizado com sucesso!');
+      } else {
+        await createBot(payload);
+        toast.success('Bot criado com sucesso!');
+      }
       onClose();
-    } catch {
-      alert('Erro ao salvar bot.');
+    } catch (err) {
+      toast.error(`Erro ao salvar bot: ${extractApiError(err)}`);
     } finally { setSaving(false); }
   };
 
@@ -206,7 +219,7 @@ function BotFormModal({ open, onClose, bot }: { open: boolean; onClose: () => vo
         {(responseMode === 'AI' || responseMode === 'HYBRID') && (
           <FormField label="Configuração de I.A.">
             <select {...register('aiConfigId')} className={inputClass}>
-              <option value="">Claude (padrão do ambiente)</option>
+              <option value="">Padrão do sistema (sem config personalizada)</option>
               {aiConfigs.map((c: any) => (
                 <option key={c.id} value={c.id}>
                   {c.name} ({c.provider} - {c.model})
@@ -297,16 +310,26 @@ function KeywordsModal({ open, onClose, bot }: { open: boolean; onClose: () => v
 
   const onAdd = async (data: any) => {
     const goto = gotoType && gotoTarget ? { type: gotoType, target: gotoTarget } : undefined;
-    await api.createKeyword(bot.id, { ...data, priority: Number(data.priority) || 0, goto });
-    reset();
-    setGotoType('');
-    setGotoTarget('');
-    load();
+    try {
+      await api.createKeyword(bot.id, { ...data, priority: Number(data.priority) || 0, goto });
+      toast.success('Keyword adicionada!');
+      reset();
+      setGotoType('');
+      setGotoTarget('');
+      load();
+    } catch (err) {
+      toast.error(`Erro ao adicionar keyword: ${extractApiError(err)}`);
+    }
   };
 
   const onDelete = async (kwId: string) => {
-    await api.deleteKeyword(bot.id, kwId);
-    load();
+    try {
+      await api.deleteKeyword(bot.id, kwId);
+      toast.success('Keyword removida!');
+      load();
+    } catch (err) {
+      toast.error(`Erro ao remover keyword: ${extractApiError(err)}`);
+    }
   };
 
   return (
@@ -427,15 +450,20 @@ function MenusModal({ open, onClose, bot }: { open: boolean; onClose: () => void
       options,
     };
 
-    if (editingMenuId) {
-      await api.updateMenu(bot.id, editingMenuId, payload);
-    } else {
-      await api.createMenu(bot.id, payload);
+    try {
+      if (editingMenuId) {
+        await api.updateMenu(bot.id, editingMenuId, payload);
+        toast.success('Menu atualizado com sucesso!');
+      } else {
+        await api.createMenu(bot.id, payload);
+        toast.success('Menu criado com sucesso!');
+      }
+      resetFormState();
+      setShowAdd(false);
+      load();
+    } catch (err) {
+      toast.error(`Erro ao salvar menu: ${extractApiError(err)}`);
     }
-
-    resetFormState();
-    setShowAdd(false);
-    load();
   };
 
   const onStartEditMenu = (menu: InteractiveMenu) => {
@@ -451,8 +479,13 @@ function MenusModal({ open, onClose, bot }: { open: boolean; onClose: () => void
   };
 
   const onDeleteMenu = async (menuId: string) => {
-    await api.deleteMenu(bot.id, menuId);
-    load();
+    try {
+      await api.deleteMenu(bot.id, menuId);
+      toast.success('Menu removido!');
+      load();
+    } catch (err) {
+      toast.error(`Erro ao remover menu: ${extractApiError(err)}`);
+    }
   };
 
   return (
@@ -565,14 +598,22 @@ function WhatsAppModal({ open, onClose, bot }: { open: boolean; onClose: () => v
     try {
       await api.createWhatsappChannel(bot.id, data);
       await fetchBots();
+      toast.success('WhatsApp conectado com sucesso!');
       onClose();
-    } catch {} finally { setSaving(false); }
+    } catch (err) {
+      toast.error(`Erro ao conectar WhatsApp: ${extractApiError(err)}`);
+    } finally { setSaving(false); }
   };
 
   const onDisconnect = async () => {
-    await api.deleteWhatsappChannel(bot.id);
-    await fetchBots();
-    onClose();
+    try {
+      await api.deleteWhatsappChannel(bot.id);
+      await fetchBots();
+      toast.success('WhatsApp desconectado!');
+      onClose();
+    } catch (err) {
+      toast.error(`Erro ao desconectar WhatsApp: ${extractApiError(err)}`);
+    }
   };
 
   return (
@@ -627,53 +668,77 @@ interface TreeNode {
 }
 
 function buildFlowTree(bot: Bot, keywords: Keyword[], menus: InteractiveMenu[]): TreeNode {
-  const visited = new Set<string>();
+  // pathVisited: rastreia apenas o caminho atual para detectar ciclos
+  // Isso permite que o mesmo menu/keyword seja referenciado em múltiplos lugares (many-to-many)
+  const resolveGoto = (goto: GotoTarget, depth: number, pathVisited: Set<string>): TreeNode | null => {
+    if (depth > 10) return null;
+    const key = `${goto.type}:${goto.target.toLowerCase()}`;
 
-  const resolveGoto = (goto: GotoTarget, depth: number): TreeNode | null => {
-    if (depth > 5) return null; // prevenir loops infinitos
-    const key = `${goto.type}:${goto.target}`;
-    if (visited.has(key)) return { id: key + '_loop', label: `${goto.target} (loop)`, type: goto.type === 'MENU' ? 'menu' : 'keyword', children: [] };
-    visited.add(key);
+    // Detecta ciclo no caminho atual
+    if (pathVisited.has(key)) {
+      return {
+        id: `loop_${key}_d${depth}`,
+        label: `↩ ${goto.target} (referência circular)`,
+        type: goto.type === 'MENU' ? 'menu' : 'keyword',
+        children: [],
+      };
+    }
+
+    const nextPath = new Set(pathVisited);
+    nextPath.add(key);
 
     if (goto.type === 'MENU') {
       const menu = menus.find(m => m.trigger.toLowerCase() === goto.target.toLowerCase());
-      if (!menu) return { id: `menu_missing_${goto.target}`, label: `Menu: ${goto.target} (não encontrado)`, type: 'menu', children: [] };
+      if (!menu) {
+        return {
+          id: `menu_missing_${goto.target}_d${depth}`,
+          label: `Menu: ${goto.target} (não encontrado)`,
+          type: 'menu',
+          children: [],
+        };
+      }
 
-      const menuNode: TreeNode = {
-        id: `menu_${menu.id}`,
+      return {
+        id: `menu_${menu.id}_d${depth}`,
         label: `Menu: ${menu.title}`,
         type: 'menu',
-        children: (menu.options || []).map(opt => {
+        children: (menu.options || []).map((opt, i) => {
           const optNode: TreeNode = {
-            id: `opt_${opt.id}`,
+            id: `opt_${opt.id}_d${depth}_i${i}`,
             label: opt.title,
             type: 'option',
             children: [],
             gotoLabel: opt.goto ? `→ ${opt.goto.type.toLowerCase()}: ${opt.goto.target}` : undefined,
           };
           if (opt.goto) {
-            const child = resolveGoto(opt.goto, depth + 1);
+            const child = resolveGoto(opt.goto, depth + 1, nextPath);
             if (child) optNode.children.push(child);
           }
           return optNode;
         }),
       };
-      return menuNode;
     }
 
     if (goto.type === 'KEYWORD') {
       const kw = keywords.find(k => k.trigger.toLowerCase() === goto.target.toLowerCase());
-      if (!kw) return { id: `kw_missing_${goto.target}`, label: `Keyword: ${goto.target} (não encontrada)`, type: 'keyword', children: [] };
+      if (!kw) {
+        return {
+          id: `kw_missing_${goto.target}_d${depth}`,
+          label: `Keyword: ${goto.target} (não encontrada)`,
+          type: 'keyword',
+          children: [],
+        };
+      }
 
       const kwNode: TreeNode = {
-        id: `kw_${kw.id}`,
+        id: `kw_${kw.id}_d${depth}`,
         label: `Keyword: ${kw.trigger}`,
         type: 'keyword',
         children: [],
         gotoLabel: kw.goto ? `→ ${kw.goto.type.toLowerCase()}: ${kw.goto.target}` : undefined,
       };
       if (kw.goto) {
-        const child = resolveGoto(kw.goto, depth + 1);
+        const child = resolveGoto(kw.goto, depth + 1, nextPath);
         if (child) kwNode.children.push(child);
       }
       return kwNode;
@@ -689,41 +754,32 @@ function buildFlowTree(bot: Bot, keywords: Keyword[], menus: InteractiveMenu[]):
     children: [],
   };
 
-  // Interação inicial
   const flow = bot.flowConfig;
+
+  // Interação inicial
   if (flow?.initialInteraction) {
-    const initNode = resolveGoto(flow.initialInteraction, 0);
+    const initNode = resolveGoto(flow.initialInteraction, 0, new Set());
     if (initNode) root.children.push(initNode);
   }
 
-  // Keywords sem goto que são "folhas" independentes
+  // Coletar triggers referenciados de qualquer lugar (para filtrar os "standalone")
   const referencedKeywords = new Set<string>();
   const referencedMenus = new Set<string>();
 
-  // Coletar todas as referências
-  if (flow?.initialInteraction) {
-    if (flow.initialInteraction.type === 'KEYWORD') referencedKeywords.add(flow.initialInteraction.target.toLowerCase());
-    if (flow.initialInteraction.type === 'MENU') referencedMenus.add(flow.initialInteraction.target.toLowerCase());
-  }
-  for (const kw of keywords) {
-    if (kw.goto) {
-      if (kw.goto.type === 'KEYWORD') referencedKeywords.add(kw.goto.target.toLowerCase());
-      if (kw.goto.type === 'MENU') referencedMenus.add(kw.goto.target.toLowerCase());
-    }
-  }
-  for (const menu of menus) {
-    for (const opt of (menu.options || [])) {
-      if (opt.goto) {
-        if (opt.goto.type === 'KEYWORD') referencedKeywords.add(opt.goto.target.toLowerCase());
-        if (opt.goto.type === 'MENU') referencedMenus.add(opt.goto.target.toLowerCase());
-      }
-    }
-  }
+  const collectRefs = (goto: GotoTarget | undefined) => {
+    if (!goto) return;
+    if (goto.type === 'KEYWORD') referencedKeywords.add(goto.target.toLowerCase());
+    if (goto.type === 'MENU') referencedMenus.add(goto.target.toLowerCase());
+  };
 
-  // Adicionar keywords não referenciadas como nós independentes
+  collectRefs(flow?.initialInteraction);
+  collectRefs(flow?.fallback?.goto);
+  for (const kw of keywords) collectRefs(kw.goto);
+  for (const menu of menus) for (const opt of (menu.options || [])) collectRefs(opt.goto);
+
+  // Keywords standalone (não referenciadas por ninguém)
   for (const kw of keywords) {
     if (!referencedKeywords.has(kw.trigger.toLowerCase()) && kw.isActive) {
-      visited.clear();
       const kwNode: TreeNode = {
         id: `standalone_kw_${kw.id}`,
         label: `Keyword: ${kw.trigger}`,
@@ -732,18 +788,17 @@ function buildFlowTree(bot: Bot, keywords: Keyword[], menus: InteractiveMenu[]):
         gotoLabel: kw.goto ? `→ ${kw.goto.type.toLowerCase()}: ${kw.goto.target}` : undefined,
       };
       if (kw.goto) {
-        const child = resolveGoto(kw.goto, 0);
+        const child = resolveGoto(kw.goto, 0, new Set([`KEYWORD:${kw.trigger.toLowerCase()}`]));
         if (child) kwNode.children.push(child);
       }
       root.children.push(kwNode);
     }
   }
 
-  // Adicionar menus não referenciados como nós independentes
+  // Menus standalone (não referenciados por ninguém)
   for (const menu of menus) {
     if (!referencedMenus.has(menu.trigger.toLowerCase()) && menu.isActive) {
-      visited.clear();
-      const menuNode = resolveGoto({ type: 'MENU', target: menu.trigger }, 0);
+      const menuNode = resolveGoto({ type: 'MENU', target: menu.trigger }, 0, new Set());
       if (menuNode) root.children.push(menuNode);
     }
   }
@@ -757,8 +812,7 @@ function buildFlowTree(bot: Bot, keywords: Keyword[], menus: InteractiveMenu[]):
       children: [],
     };
     if (flow.fallback.goto) {
-      visited.clear();
-      const child = resolveGoto(flow.fallback.goto, 0);
+      const child = resolveGoto(flow.fallback.goto, 0, new Set());
       if (child) fbNode.children.push(child);
     }
     root.children.push(fbNode);
@@ -769,11 +823,11 @@ function buildFlowTree(bot: Bot, keywords: Keyword[], menus: InteractiveMenu[]):
 
 function TreeNodeView({ node, depth = 0 }: { node: TreeNode; depth?: number }) {
   const colors: Record<TreeNode['type'], string> = {
-    initial: 'text-[var(--color-accent)] bg-[var(--color-accent-glow)]',
-    keyword: 'text-emerald-400 bg-emerald-500/10',
-    menu: 'text-purple-400 bg-purple-500/10',
-    option: 'text-blue-400 bg-blue-500/10',
-    fallback: 'text-orange-400 bg-orange-500/10',
+    initial: 'text-[var(--color-accent)] bg-[var(--color-accent-glow)] border border-[var(--color-accent)]/20',
+    keyword: 'text-emerald-400 bg-emerald-500/10 border border-emerald-500/20',
+    menu: 'text-purple-400 bg-purple-500/10 border border-purple-500/20',
+    option: 'text-blue-400 bg-blue-500/10 border border-blue-500/20',
+    fallback: 'text-orange-400 bg-orange-500/10 border border-orange-500/20',
   };
 
   const icons: Record<TreeNode['type'], React.ReactNode> = {
@@ -784,22 +838,40 @@ function TreeNodeView({ node, depth = 0 }: { node: TreeNode; depth?: number }) {
     fallback: <ArrowRight className="w-3.5 h-3.5" />,
   };
 
+  const hasChildren = node.children.length > 0;
+
   return (
-    <div className={depth > 0 ? 'ml-5 border-l border-[var(--color-border)] pl-3' : ''}>
-      <div className="flex items-center gap-2 py-1.5">
-        <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-medium ${colors[node.type]}`}>
+    <div className={depth > 0 ? 'relative ml-6' : ''}>
+      {/* Linha vertical de conexão */}
+      {depth > 0 && (
+        <div className="absolute left-[-16px] top-0 bottom-0 w-px bg-[var(--color-border)]" />
+      )}
+      {/* Linha horizontal de conexão */}
+      {depth > 0 && (
+        <div className="absolute left-[-16px] top-[14px] w-4 h-px bg-[var(--color-border)]" />
+      )}
+
+      <div className="flex items-start gap-2 py-1.5">
+        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium shrink-0 ${colors[node.type]}`}>
           {icons[node.type]}
           {node.label}
         </span>
         {node.gotoLabel && (
-          <span className="text-[10px] text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded">
+          <span className="text-[10px] text-blue-400 bg-blue-500/10 border border-blue-500/20 px-2 py-1 rounded-lg mt-0.5 shrink-0">
             {node.gotoLabel}
           </span>
         )}
       </div>
-      {node.children.map((child) => (
-        <TreeNodeView key={child.id} node={child} depth={depth + 1} />
-      ))}
+
+      {hasChildren && (
+        <div className="ml-4 relative">
+          {/* Linha vertical para os filhos */}
+          <div className="absolute left-0 top-0 bottom-0 w-px bg-[var(--color-border)]" style={{ left: '-8px' }} />
+          {node.children.map((child) => (
+            <TreeNodeView key={child.id} node={child} depth={depth + 1} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -825,14 +897,19 @@ function FlowTreeModal({ open, onClose, bot }: { open: boolean; onClose: () => v
   }, [bot, keywords, menus, loading]);
 
   return (
-    <Modal open={open} onClose={onClose} title={`Arvore do Fluxo - ${bot.name}`} wide>
+    <Modal open={open} onClose={onClose} title={`Árvore do Fluxo — ${bot.name}`} wide>
       {loading ? (
         <div className="flex items-center justify-center py-12 text-[var(--color-text-muted)]">
           <Loader2 className="w-5 h-5 animate-spin mr-2" /> Carregando...
         </div>
       ) : tree && tree.children.length > 0 ? (
-        <div className="max-h-[500px] overflow-y-auto">
-          <TreeNodeView node={tree} />
+        <div>
+          <p className="text-xs text-[var(--color-text-muted)] mb-4">
+            Os nós com <span className="text-blue-400">→ goto</span> são referências many-to-many — um mesmo menu ou keyword pode ser referenciado em múltiplos lugares.
+          </p>
+          <div className="max-h-[520px] overflow-y-auto overflow-x-auto pr-2 pl-1 pb-2">
+            <TreeNodeView node={tree} />
+          </div>
         </div>
       ) : (
         <div className="text-center py-12">
@@ -1213,7 +1290,12 @@ export default function BotsPage() {
   useEffect(() => { fetchBots(); }, [fetchBots]);
 
   const toggleActive = async (bot: Bot) => {
-    await updateBot(bot.id, { isActive: !bot.isActive });
+    try {
+      await updateBot(bot.id, { isActive: !bot.isActive });
+      toast.success(bot.isActive ? `Bot "${bot.name}" desativado` : `Bot "${bot.name}" ativado`);
+    } catch (err) {
+      toast.error(`Erro ao alterar status do bot: ${extractApiError(err)}`);
+    }
   };
 
   return (
@@ -1263,28 +1345,44 @@ export default function BotsPage() {
                 </div>
 
                 <div className="flex items-center gap-1">
+                  {/* Testar / Visualizar */}
                   <button onClick={() => setEmulatorBot(bot)} className="p-2.5 rounded-lg hover:bg-[var(--color-bg-hover)] text-[var(--color-text-muted)] hover:text-[var(--color-accent)] transition-all cursor-pointer" title="Testar Bot">
                     <Play className="w-4 h-4" />
                   </button>
-                  <button onClick={() => setTreeBot(bot)} className="p-2.5 rounded-lg hover:bg-[var(--color-bg-hover)] text-[var(--color-text-muted)] hover:text-purple-400 transition-all cursor-pointer" title="Arvore do Fluxo">
+                  <button onClick={() => setTreeBot(bot)} className="p-2.5 rounded-lg hover:bg-[var(--color-bg-hover)] text-[var(--color-text-muted)] hover:text-purple-400 transition-all cursor-pointer" title="Árvore do Fluxo">
                     <GitBranch className="w-4 h-4" />
                   </button>
+
+                  {/* Divisor */}
+                  <div className="w-px h-6 bg-[var(--color-border)] mx-1" />
+
+                  {/* Ativar/Desativar */}
                   <button onClick={() => toggleActive(bot)} className="p-2.5 rounded-lg hover:bg-[var(--color-bg-hover)] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-all cursor-pointer" title={bot.isActive ? 'Desativar' : 'Ativar'}>
                     {bot.isActive ? <Power className="w-4 h-4 text-green-400" /> : <PowerOff className="w-4 h-4" />}
                   </button>
-                  <button onClick={() => setKwBot(bot)} className="p-2.5 rounded-lg hover:bg-[var(--color-bg-hover)] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-all cursor-pointer" title="Keywords">
+
+                  {/* Divisor */}
+                  <div className="w-px h-6 bg-[var(--color-border)] mx-1" />
+
+                  {/* Configurar conteúdo */}
+                  <button onClick={() => setKwBot(bot)} className="p-2.5 rounded-lg hover:bg-[var(--color-bg-hover)] text-[var(--color-text-muted)] hover:text-emerald-400 transition-all cursor-pointer" title="Keywords">
                     <Key className="w-4 h-4" />
                   </button>
-                  <button onClick={() => setMenuBot(bot)} className="p-2.5 rounded-lg hover:bg-[var(--color-bg-hover)] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-all cursor-pointer" title="Menus Interativos">
+                  <button onClick={() => setMenuBot(bot)} className="p-2.5 rounded-lg hover:bg-[var(--color-bg-hover)] text-[var(--color-text-muted)] hover:text-blue-400 transition-all cursor-pointer" title="Menus Interativos">
                     <List className="w-4 h-4" />
                   </button>
-                  <button onClick={() => setWaBot(bot)} className="p-2.5 rounded-lg hover:bg-[var(--color-bg-hover)] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-all cursor-pointer" title="WhatsApp">
+                  <button onClick={() => setWaBot(bot)} className="p-2.5 rounded-lg hover:bg-[var(--color-bg-hover)] text-[var(--color-text-muted)] hover:text-green-400 transition-all cursor-pointer" title="WhatsApp">
                     <Phone className="w-4 h-4" />
                   </button>
+
+                  {/* Divisor */}
+                  <div className="w-px h-6 bg-[var(--color-border)] mx-1" />
+
+                  {/* Editar / Excluir */}
                   <button onClick={() => { setEditBot(bot); setShowForm(true); }} className="p-2.5 rounded-lg hover:bg-[var(--color-bg-hover)] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-all cursor-pointer" title="Editar">
                     <Pencil className="w-4 h-4" />
                   </button>
-                  <button onClick={() => deleteBot(bot.id)} className="p-2.5 rounded-lg hover:bg-red-500/10 text-[var(--color-text-muted)] hover:text-red-400 transition-all cursor-pointer" title="Excluir">
+                  <button onClick={async () => { try { await deleteBot(bot.id); toast.success(`Bot "${bot.name}" excluído!`); } catch (err) { toast.error(`Erro ao excluir bot: ${extractApiError(err)}`); } }} className="p-2.5 rounded-lg hover:bg-red-500/10 text-[var(--color-text-muted)] hover:text-red-400 transition-all cursor-pointer" title="Excluir">
                     <Trash2 className="w-4 h-4" />
                   </button>
                 </div>

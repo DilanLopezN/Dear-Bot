@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { BotService } from '../bot/bot.service';
 import { CreateKeywordDto, UpdateKeywordDto } from './dto/keyword.dto';
@@ -15,22 +15,30 @@ export interface KeywordMatchResult {
 
 @Injectable()
 export class KeywordService {
+  private readonly logger = new Logger(KeywordService.name);
+
   constructor(
     private prisma: PrismaService,
     private botService: BotService,
   ) {}
 
   async create(userId: string, botId: string, dto: CreateKeywordDto) {
-    await this.botService.findOne(userId, botId);
-    return this.prisma.keyword.create({
-      data: {
-        botId,
-        trigger: dto.trigger,
-        response: dto.response,
-        priority: dto.priority,
-        goto: dto.goto ? (dto.goto as any) : undefined,
-      },
-    });
+    this.logger.log(`Criando keyword "${dto.trigger}" no bot ${botId}`);
+    try {
+      await this.botService.findOne(userId, botId);
+      return await this.prisma.keyword.create({
+        data: {
+          botId,
+          trigger: dto.trigger,
+          response: dto.response,
+          priority: dto.priority,
+          goto: dto.goto ? (dto.goto as any) : undefined,
+        },
+      });
+    } catch (err) {
+      this.logger.error(`Erro ao criar keyword no bot ${botId}`, err);
+      throw err;
+    }
   }
 
   async findAll(userId: string, botId: string) {
@@ -42,21 +50,33 @@ export class KeywordService {
   }
 
   async update(userId: string, botId: string, keywordId: string, dto: UpdateKeywordDto) {
-    await this.botService.findOne(userId, botId);
-    const keyword = await this.prisma.keyword.findFirst({ where: { id: keywordId, botId } });
-    if (!keyword) throw new NotFoundException('Keyword não encontrada');
-    return this.prisma.keyword.update({
-      where: { id: keywordId },
-      data: {
-        ...dto,
-        goto: dto.goto === null ? null : dto.goto ? (dto.goto as any) : undefined,
-      },
-    });
+    this.logger.log(`Atualizando keyword ${keywordId} no bot ${botId}`);
+    try {
+      await this.botService.findOne(userId, botId);
+      const keyword = await this.prisma.keyword.findFirst({ where: { id: keywordId, botId } });
+      if (!keyword) throw new NotFoundException('Keyword não encontrada');
+      return await this.prisma.keyword.update({
+        where: { id: keywordId },
+        data: {
+          ...dto,
+          goto: dto.goto === null ? null : dto.goto ? (dto.goto as any) : undefined,
+        },
+      });
+    } catch (err) {
+      this.logger.error(`Erro ao atualizar keyword ${keywordId}`, err);
+      throw err;
+    }
   }
 
   async remove(userId: string, botId: string, keywordId: string) {
-    await this.botService.findOne(userId, botId);
-    return this.prisma.keyword.delete({ where: { id: keywordId } });
+    this.logger.log(`Removendo keyword ${keywordId} do bot ${botId}`);
+    try {
+      await this.botService.findOne(userId, botId);
+      return await this.prisma.keyword.delete({ where: { id: keywordId } });
+    } catch (err) {
+      this.logger.error(`Erro ao remover keyword ${keywordId}`, err);
+      throw err;
+    }
   }
 
   async findByExactTrigger(botId: string, trigger: string) {
@@ -70,7 +90,6 @@ export class KeywordService {
     });
   }
 
-  /** Busca resposta por keyword - usado internamente pelo webhook */
   async findMatch(botId: string, message: string): Promise<KeywordMatchResult | null> {
     const keywords = await this.prisma.keyword.findMany({
       where: { botId, isActive: true },

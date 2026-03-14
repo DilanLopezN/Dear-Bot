@@ -44,6 +44,19 @@ enum VariableType {
   DATE
 }
 
+enum ConversationStatus {
+  BOT
+  WAITING
+  HUMAN
+  CLOSED
+}
+
+enum MessageSender {
+  CONTACT
+  BOT
+  HUMAN
+}
+
 model User {
   id               String   @id @default(uuid())
   email            String   @unique
@@ -161,6 +174,9 @@ model Conversation {
   contactPhone          String
   contactName           String?
   isActive              Boolean  @default(true)
+  status                ConversationStatus @default(BOT)
+  humanTakeoverAt       DateTime?
+  lastMessageAt         DateTime @default(now())
   flowStepIndex         Int      @default(0)
   waitingForVariable    Boolean  @default(false)
   pendingVariableName   String?
@@ -174,6 +190,8 @@ model Conversation {
   variables ConversationVariable[]
 
   @@unique([botId, contactPhone])
+  @@index([status])
+  @@index([lastMessageAt])
   @@map("conversations")
 }
 
@@ -198,6 +216,7 @@ model Message {
   direction       MessageDirection
   content         String           @db.Text
   status          MessageStatus    @default(SENT)
+  senderType      MessageSender    @default(BOT)
   dialog360MsgId  String?
   createdAt       DateTime         @default(now())
 

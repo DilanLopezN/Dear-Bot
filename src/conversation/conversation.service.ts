@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 type MessageDirection = 'INBOUND' | 'OUTBOUND';
+type SenderType = 'CONTACT' | 'BOT' | 'HUMAN';
 
 @Injectable()
 export class ConversationService {
@@ -14,7 +15,7 @@ export class ConversationService {
     try {
       return await this.prisma.conversation.upsert({
         where: { botId_contactPhone: { botId, contactPhone } },
-        update: { contactName: contactName || undefined, updatedAt: new Date() },
+        update: { contactName: contactName || undefined },
         create: { botId, contactPhone, contactName },
       });
     } catch (err) {
@@ -77,10 +78,12 @@ export class ConversationService {
     direction: MessageDirection,
     content: string,
     dialog360MsgId?: string,
+    senderType?: SenderType,
   ) {
     try {
+      const sender = senderType || (direction === 'INBOUND' ? 'CONTACT' : 'BOT');
       return await this.prisma.message.create({
-        data: { conversationId, direction, content, dialog360MsgId },
+        data: { conversationId, direction, content, dialog360MsgId, senderType: sender },
       });
     } catch (err) {
       this.logger.error(`Erro ao salvar mensagem na conversa ${conversationId} (${direction}): ${err.message}`, err.stack);

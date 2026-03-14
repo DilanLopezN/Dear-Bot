@@ -544,7 +544,20 @@ export class WebhookService {
         'INBOUND',
         text,
         messageId,
+        'CONTACT',
       );
+
+      // Atualizar lastMessageAt
+      await this.prisma.conversation.update({
+        where: { id: conversation.id },
+        data: { lastMessageAt: new Date() },
+      });
+
+      // Se a conversa está em modo humano, não processar pelo bot
+      if (conversation.status === 'HUMAN') {
+        this.logger.log(`Conversa ${conversation.id} em modo humano, ignorando processamento do bot`);
+        return;
+      }
 
       // Verificar se há captura de variável pendente
       const handledByCapture = await this.processVariableCapture(bot, from, conversation, text);

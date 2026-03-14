@@ -10,6 +10,7 @@ import { WhatsappChannelModule } from './whatsapp-channel/whatsapp-channel.modul
 import { ServicesModule } from './services/services.module';
 import { MenuModule } from './menu/menu.module';
 import { AiConfigModule } from './ai-config/ai-config.module';
+import { ChatManagementModule } from './chat-management/chat-management.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { AiConfigModule } from './ai-config/ai-config.module';
     ServicesModule,
     MenuModule,
     AiConfigModule,
+    ChatManagementModule,
   ],
 })
 export class AppModule {}

@@ -11,12 +11,14 @@ import {
   Sun,
   Moon,
   Cpu,
+  Headset,
 } from 'lucide-react';
 import './Sidebar.css';
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/bots', icon: Bot, label: 'Bots' },
+  { to: '/chat', icon: Headset, label: 'Chat' },
   { to: '/ai-config', icon: Cpu, label: 'Configuração I.A.' },
   { to: '/relatorios', icon: BarChart3, label: 'Relatórios' },
   { to: '/financeiro', icon: CreditCard, label: 'Financeiro' },

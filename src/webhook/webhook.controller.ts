@@ -3,7 +3,6 @@ import { WebhookService } from './webhook.service';
 
 /**
  * Payload do Dialog360 webhook (Cloud API format)
- * Documentação: https://docs.360dialog.com/docs/waba-messaging/receiving-messages
  */
 interface Dialog360WebhookPayload {
   object: string;
@@ -38,12 +37,22 @@ interface Dialog360WebhookPayload {
   }>;
 }
 
+/**
+ * Payload da Evolution API webhook
+ */
+interface EvolutionWebhookPayload {
+  event: string;
+  instance: string;
+  data: any;
+}
+
 @Controller('webhook')
 export class WebhookController {
   private readonly logger = new Logger(WebhookController.name);
 
   constructor(private webhookService: WebhookService) {}
 
+  /** Dialog360 webhook endpoint */
   @Post(':botId')
   @HttpCode(200)
   async handleWebhook(
@@ -101,6 +110,110 @@ export class WebhookController {
               status.status,
             );
           }
+        }
+      }
+    }
+
+    return { status: 'ok' };
+  }
+
+  /** Evolution API webhook endpoint */
+  @Post('evolution/:botId')
+  @HttpCode(200)
+  async handleEvolutionWebhook(
+    @Param('botId') botId: string,
+    @Body() payload: EvolutionWebhookPayload,
+  ) {
+    this.logger.log(`Evolution webhook recebido para bot ${botId} — evento: ${payload.event}`);
+
+    if (payload.event === 'messages.upsert' || payload.event === 'MESSAGES_UPSERT') {
+      const data = payload.data;
+
+      // Evolution pode enviar array ou objeto único
+      const messages = Array.isArray(data) ? data : [data];
+
+      for (const msg of messages) {
+        const key = msg.key;
+        if (!key || key.fromMe) continue;
+
+        const remoteJid = key.remoteJid;
+        if (!remoteJid) continue;
+
+        // Extrair número do remoteJid (5511999999999@s.whatsapp.net → 5511999999999)
+        const from = remoteJid.replace(/@.*$/, '');
+        const messageId = key.id || '';
+        const contactName = msg.pushName || undefined;
+
+        const message = msg.message;
+        if (!message) continue;
+
+        // Mensagem de texto
+        const textContent =
+          message.conversation ||
+          message.extendedTextMessage?.text;
+
+        if (textContent) {
+          await this.webhookService.processIncomingMessage(
+            botId,
+            from,
+            textContent,
+            messageId,
+            contactName,
+          );
+          continue;
+        }
+
+        // Respostas de lista interativa
+        const listResponse = message.listResponseMessage;
+        if (listResponse) {
+          await this.webhookService.processInteractiveResponse(
+            botId,
+            from,
+            'list_reply',
+            listResponse.singleSelectReply?.selectedRowId || listResponse.title || '',
+            listResponse.title || '',
+            messageId,
+            contactName,
+          );
+          continue;
+        }
+
+        // Respostas de botão
+        const buttonResponse = message.buttonsResponseMessage;
+        if (buttonResponse) {
+          await this.webhookService.processInteractiveResponse(
+            botId,
+            from,
+            'button_reply',
+            buttonResponse.selectedButtonId || '',
+            buttonResponse.selectedDisplayText || '',
+            messageId,
+            contactName,
+          );
+          continue;
+        }
+      }
+    }
+
+    if (payload.event === 'messages.update' || payload.event === 'MESSAGES_UPDATE') {
+      const data = payload.data;
+      const updates = Array.isArray(data) ? data : [data];
+
+      for (const update of updates) {
+        const messageId = update.key?.id;
+        const status = update.update?.status;
+        if (!messageId || status === undefined) continue;
+
+        // Evolution status: 2=SENT, 3=DELIVERED, 4=READ
+        const statusMap: Record<number, string> = {
+          2: 'sent',
+          3: 'delivered',
+          4: 'read',
+          5: 'read',
+        };
+        const mappedStatus = statusMap[status];
+        if (mappedStatus) {
+          await this.webhookService.processStatusUpdate(botId, messageId, mappedStatus);
         }
       }
     }

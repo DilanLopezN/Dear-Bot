@@ -245,7 +245,14 @@ class ApiService {
     return bot.whatsappChannel;
   }
 
-  async createWhatsappChannel(botId: string, payload: { phoneNumber: string; dialog360ApiKey: string }) {
+  async createWhatsappChannel(botId: string, payload: {
+    phoneNumber: string;
+    provider?: 'DIALOG360' | 'EVOLUTION';
+    dialog360ApiKey?: string;
+    evolutionApiUrl?: string;
+    evolutionApiKey?: string;
+    evolutionInstance?: string;
+  }) {
     const { data } = await this.client.post(`/bots/${botId}/whatsapp`, payload);
     return data;
   }
@@ -257,6 +264,16 @@ class ApiService {
 
   async deleteWhatsappChannel(botId: string) {
     const { data } = await this.client.delete(`/bots/${botId}/whatsapp`);
+    return data;
+  }
+
+  async getEvolutionQrCode(botId: string) {
+    const { data } = await this.client.get(`/bots/${botId}/whatsapp/evolution/qrcode`);
+    return data;
+  }
+
+  async getEvolutionConnectionState(botId: string) {
+    const { data } = await this.client.get(`/bots/${botId}/whatsapp/evolution/status`);
     return data;
   }
 

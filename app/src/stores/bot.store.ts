@@ -20,7 +20,9 @@ export interface Bot {
   whatsappChannel?: {
     id: string;
     phoneNumber: string;
+    provider: 'DIALOG360' | 'EVOLUTION';
     isVerified: boolean;
+    evolutionInstance?: string;
   } | null;
   _count?: {
     keywords: number;

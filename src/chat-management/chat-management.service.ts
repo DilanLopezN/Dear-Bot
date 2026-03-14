@@ -1,7 +1,7 @@
 import { Injectable, Logger, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConversationService } from '../conversation/conversation.service';
-import { Dialog360Service } from '../services/dialog360.service';
+import { MessagingService } from '../services/messaging.service';
 
 @Injectable()
 export class ChatManagementService {
@@ -10,7 +10,7 @@ export class ChatManagementService {
   constructor(
     private prisma: PrismaService,
     private conversationService: ConversationService,
-    private dialog360: Dialog360Service,
+    private messaging: MessagingService,
   ) {}
 
   /** Lista todos os chats ativos dos bots do usuário */
@@ -139,11 +139,13 @@ export class ChatManagementService {
       throw new ForbiddenException('Você precisa assumir o atendimento antes de enviar mensagens');
     }
 
-    const apiKey = conversation.bot.whatsappChannel?.dialog360ApiKey;
-    if (!apiKey) throw new NotFoundException('Canal WhatsApp não configurado');
+    const whatsappChannel = conversation.bot.whatsappChannel;
+    if (!whatsappChannel) throw new NotFoundException('Canal WhatsApp não configurado');
 
-    const result = await this.dialog360.sendTextMessage(
-      apiKey,
+    const channel = MessagingService.fromChannel(whatsappChannel);
+
+    const sendResult = await this.messaging.sendTextMessage(
+      channel,
       conversation.contactPhone,
       content,
     );
@@ -154,7 +156,8 @@ export class ChatManagementService {
         direction: 'OUTBOUND',
         content,
         senderType: 'HUMAN',
-        dialog360MsgId: result?.messages?.[0]?.id,
+        dialog360MsgId: channel.provider === 'DIALOG360' ? sendResult?.messageId : undefined,
+        externalMsgId: channel.provider === 'EVOLUTION' ? sendResult?.messageId : undefined,
       },
     });
 

@@ -37,6 +37,11 @@ enum AiProvider {
   GEMINI
 }
 
+enum ChannelProvider {
+  DIALOG360
+  EVOLUTION
+}
+
 enum VariableType {
   STRING
   NUMBER
@@ -136,14 +141,19 @@ model InteractiveMenu {
 }
 
 model WhatsappChannel {
-  id             String  @id @default(uuid())
-  botId          String  @unique
-  phoneNumber    String  @unique
-  dialog360ApiKey String
-  webhookSecret  String?
-  isVerified     Boolean @default(false)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id              String          @id @default(uuid())
+  botId           String          @unique
+  phoneNumber     String          @unique
+  provider        ChannelProvider @default(DIALOG360)
+  dialog360ApiKey String?
+  // Evolution API fields
+  evolutionApiUrl    String?      // URL da instância Evolution (ex: https://api.evolution.com)
+  evolutionApiKey    String?      // Global API Key da Evolution
+  evolutionInstance  String?      // Nome da instância na Evolution
+  webhookSecret   String?
+  isVerified      Boolean         @default(false)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
 
   bot Bot @relation(fields: [botId], references: [id], onDelete: Cascade)
 
@@ -218,6 +228,7 @@ model Message {
   status          MessageStatus    @default(SENT)
   senderType      MessageSender    @default(BOT)
   dialog360MsgId  String?
+  externalMsgId   String?          // ID genérico da mensagem (Evolution ou outro provider)
   createdAt       DateTime         @default(now())
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)

@@ -499,18 +499,54 @@ function MenusModal({ open, onClose, bot }: { open: boolean; onClose: () => void
 
 // ─── WhatsApp Modal ───
 function WhatsAppModal({ open, onClose, bot }: { open: boolean; onClose: () => void; bot: Bot }) {
-  const { register, handleSubmit, formState: { errors } } = useForm({ defaultValues: { phoneNumber: '', dialog360ApiKey: '' } });
+  const { register, handleSubmit, formState: { errors }, watch } = useForm({
+    defaultValues: {
+      phoneNumber: '',
+      provider: 'EVOLUTION' as 'DIALOG360' | 'EVOLUTION',
+      dialog360ApiKey: '',
+      evolutionApiUrl: '',
+      evolutionApiKey: '',
+      evolutionInstance: '',
+    },
+  });
   const [saving, setSaving] = useState(false);
+  const [qrCode, setQrCode] = useState<string | null>(null);
+  const [connectionState, setConnectionState] = useState<string | null>(null);
   const { fetchBots } = useBotStore();
   const hasChannel = !!bot.whatsappChannel;
+  const provider = watch('provider');
 
   const onSubmit = async (data: any) => {
     setSaving(true);
     try {
-      await api.createWhatsappChannel(bot.id, data);
+      const payload: any = {
+        phoneNumber: data.phoneNumber,
+        provider: data.provider,
+      };
+      if (data.provider === 'DIALOG360') {
+        payload.dialog360ApiKey = data.dialog360ApiKey;
+      } else {
+        payload.evolutionApiUrl = data.evolutionApiUrl;
+        payload.evolutionApiKey = data.evolutionApiKey;
+        payload.evolutionInstance = data.evolutionInstance;
+      }
+      await api.createWhatsappChannel(bot.id, payload);
       await fetchBots();
       toast.success('WhatsApp conectado com sucesso!');
-      onClose();
+
+      // Se Evolution, buscar QR Code
+      if (data.provider === 'EVOLUTION') {
+        try {
+          const qr = await api.getEvolutionQrCode(bot.id);
+          if (qr?.base64 || qr?.code) {
+            setQrCode(qr.base64 || qr.code);
+          }
+        } catch {
+          toast.success('Canal criado! Use o QR Code na Evolution API para conectar.');
+        }
+      } else {
+        onClose();
+      }
     } catch (err) {
       toast.error(`Erro ao conectar WhatsApp: ${extractApiError(err)}`);
     } finally { setSaving(false); }
@@ -521,9 +557,37 @@ function WhatsAppModal({ open, onClose, bot }: { open: boolean; onClose: () => v
       await api.deleteWhatsappChannel(bot.id);
       await fetchBots();
       toast.success('WhatsApp desconectado!');
+      setQrCode(null);
+      setConnectionState(null);
       onClose();
     } catch (err) {
       toast.error(`Erro ao desconectar WhatsApp: ${extractApiError(err)}`);
+    }
+  };
+
+  const checkEvolutionStatus = async () => {
+    try {
+      const state = await api.getEvolutionConnectionState(bot.id);
+      setConnectionState(state?.instance?.state || state?.state || 'unknown');
+      if (state?.instance?.state === 'open' || state?.state === 'open') {
+        toast.success('WhatsApp conectado via Evolution!');
+        await fetchBots();
+      }
+    } catch {
+      setConnectionState('erro');
+    }
+  };
+
+  const fetchQrCode = async () => {
+    try {
+      const qr = await api.getEvolutionQrCode(bot.id);
+      if (qr?.base64) {
+        setQrCode(qr.base64);
+      } else if (qr?.code) {
+        setQrCode(qr.code);
+      }
+    } catch {
+      toast.error('Erro ao buscar QR Code');
     }
   };
 
@@ -534,27 +598,100 @@ function WhatsAppModal({ open, onClose, bot }: { open: boolean; onClose: () => v
           <div className="wa-connected__status">
             <div className="wa-connected__status-header">
               <Zap size={15} /> Conectado
+              <span className="badge badge-accent" style={{ marginLeft: 8, fontSize: 10 }}>
+                {bot.whatsappChannel?.provider || 'DIALOG360'}
+              </span>
             </div>
             <p className="wa-connected__phone">{bot.whatsappChannel?.phoneNumber}</p>
+            {bot.whatsappChannel?.evolutionInstance && (
+              <p style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 4 }}>
+                Instância: {bot.whatsappChannel.evolutionInstance}
+              </p>
+            )}
           </div>
+
+          {bot.whatsappChannel?.provider === 'EVOLUTION' && (
+            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+              <button onClick={fetchQrCode} className="btn btn-secondary" style={{ flex: 1, justifyContent: 'center' }}>
+                QR Code
+              </button>
+              <button onClick={checkEvolutionStatus} className="btn btn-secondary" style={{ flex: 1, justifyContent: 'center' }}>
+                Verificar Status
+              </button>
+            </div>
+          )}
+
+          {qrCode && (
+            <div style={{ textAlign: 'center', margin: '12px 0', padding: 16, background: '#fff', borderRadius: 8 }}>
+              {qrCode.startsWith('data:') || qrCode.startsWith('http') ? (
+                <img src={qrCode} alt="QR Code" style={{ maxWidth: 256, width: '100%' }} />
+              ) : (
+                <div style={{ wordBreak: 'break-all', fontSize: 10, color: '#333', maxHeight: 200, overflow: 'auto' }}>
+                  <p style={{ fontWeight: 600, marginBottom: 8, color: '#000' }}>Escaneie este QR Code no WhatsApp:</p>
+                  <img src={`https://api.qrserver.com/v1/create-qr-code/?size=256x256&data=${encodeURIComponent(qrCode)}`} alt="QR Code" style={{ maxWidth: 256, width: '100%' }} />
+                </div>
+              )}
+            </div>
+          )}
+
+          {connectionState && (
+            <div style={{ textAlign: 'center', marginBottom: 8 }}>
+              <span className={`badge ${connectionState === 'open' ? 'badge-green' : 'badge-accent'}`}>
+                Status: {connectionState === 'open' ? 'Conectado' : connectionState}
+              </span>
+            </div>
+          )}
+
           <button onClick={onDisconnect} className="btn btn-danger" style={{ width: '100%', justifyContent: 'center' }}>
             <Trash2 size={15} /> Desconectar WhatsApp
           </button>
         </div>
       ) : (
         <form onSubmit={handleSubmit(onSubmit)}>
+          <FormField label="Provedor">
+            <select {...register('provider')} className="form-input">
+              <option value="EVOLUTION">Evolution API (QR Code)</option>
+              <option value="DIALOG360">Dialog360 (API Key)</option>
+            </select>
+          </FormField>
+
           <FormField label="Número WhatsApp" error={errors.phoneNumber?.message}>
             <div className="input-wrapper">
               <span className="input-icon"><Phone size={16} /></span>
               <input {...register('phoneNumber', { required: 'Obrigatório' })} placeholder="+5511999999999" className="form-input with-icon" />
             </div>
           </FormField>
-          <FormField label="Dialog360 API Key" error={errors.dialog360ApiKey?.message}>
-            <div className="input-wrapper">
-              <span className="input-icon"><Key size={16} /></span>
-              <input {...register('dialog360ApiKey', { required: 'Obrigatório' })} placeholder="Sua API Key" className="form-input with-icon" />
-            </div>
-          </FormField>
+
+          {provider === 'DIALOG360' ? (
+            <FormField label="Dialog360 API Key" error={errors.dialog360ApiKey?.message}>
+              <div className="input-wrapper">
+                <span className="input-icon"><Key size={16} /></span>
+                <input {...register('dialog360ApiKey', { required: provider === 'DIALOG360' ? 'Obrigatório' : false })} placeholder="Sua API Key" className="form-input with-icon" />
+              </div>
+            </FormField>
+          ) : (
+            <>
+              <FormField label="URL da Evolution API" error={errors.evolutionApiUrl?.message}>
+                <div className="input-wrapper">
+                  <span className="input-icon"><Zap size={16} /></span>
+                  <input {...register('evolutionApiUrl', { required: provider === 'EVOLUTION' ? 'Obrigatório' : false })} placeholder="https://sua-evolution-api.com" className="form-input with-icon" />
+                </div>
+              </FormField>
+              <FormField label="Global API Key" error={errors.evolutionApiKey?.message}>
+                <div className="input-wrapper">
+                  <span className="input-icon"><Key size={16} /></span>
+                  <input {...register('evolutionApiKey', { required: provider === 'EVOLUTION' ? 'Obrigatório' : false })} placeholder="Sua API Key da Evolution" className="form-input with-icon" />
+                </div>
+              </FormField>
+              <FormField label="Nome da Instância" error={errors.evolutionInstance?.message}>
+                <div className="input-wrapper">
+                  <span className="input-icon"><MessageSquare size={16} /></span>
+                  <input {...register('evolutionInstance', { required: provider === 'EVOLUTION' ? 'Obrigatório' : false })} placeholder="minha-instancia" className="form-input with-icon" />
+                </div>
+              </FormField>
+            </>
+          )}
+
           <button type="submit" disabled={saving} className="btn btn-primary" style={{ width: '100%', marginTop: 8 }}>
             {saving && <Loader2 size={15} className="animate-spin" />}
             Conectar WhatsApp
@@ -1037,6 +1174,7 @@ export default function BotsPage() {
                   {bot.whatsappChannel && (
                     <span className="badge badge-green" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                       <Zap size={10} /> {bot.whatsappChannel.phoneNumber}
+                      <span style={{ opacity: 0.7, fontSize: 9 }}>({bot.whatsappChannel.provider || 'DIALOG360'})</span>
                     </span>
                   )}
                 </div>

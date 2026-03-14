@@ -1,4 +1,4 @@
-import { Controller, Post, Put, Delete, Body, Param, UseGuards } from '@nestjs/common';
+import { Controller, Post, Put, Delete, Get, Body, Param, UseGuards } from '@nestjs/common';
 import { WhatsappChannelService } from './whatsapp-channel.service';
 import { CreateWhatsappChannelDto, UpdateWhatsappChannelDto } from './dto/whatsapp-channel.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -30,5 +30,21 @@ export class WhatsappChannelController {
   @Delete()
   remove(@CurrentUser('id') userId: string, @Param('botId') botId: string) {
     return this.service.remove(userId, botId);
+  }
+
+  @Get('evolution/qrcode')
+  getEvolutionQrCode(
+    @CurrentUser('id') userId: string,
+    @Param('botId') botId: string,
+  ) {
+    return this.service.getEvolutionQrCode(userId, botId);
+  }
+
+  @Get('evolution/status')
+  getEvolutionConnectionState(
+    @CurrentUser('id') userId: string,
+    @Param('botId') botId: string,
+  ) {
+    return this.service.getEvolutionConnectionState(userId, botId);
   }
 }

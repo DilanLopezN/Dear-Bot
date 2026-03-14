@@ -6,8 +6,8 @@ import { MenuService } from '../menu/menu.service';
 import { ClaudeService } from '../services/claude.service';
 import { OpenAIService } from '../services/openai.service';
 import { GeminiService } from '../services/gemini.service';
-import { Dialog360Service } from '../services/dialog360.service';
-import { VariableType } from '@prisma/client';
+import { MessagingService, ChannelConfig } from '../services/messaging.service';
+import { Prisma, VariableType } from '@prisma/client';
 
 type MessageStatus = 'SENT' | 'DELIVERED' | 'READ' | 'FAILED';
 
@@ -43,7 +43,7 @@ export class WebhookService {
     private claudeService: ClaudeService,
     private openaiService: OpenAIService,
     private geminiService: GeminiService,
-    private dialog360: Dialog360Service,
+    private messaging: MessagingService,
   ) {}
 
   private parseFlowConfig(raw: unknown): FlowConfig {
@@ -170,7 +170,7 @@ export class WebhookService {
         waitingForVariable: false,
         pendingVariableName: null,
         pendingVariableType: null,
-        pendingVariableGoto: null,
+        pendingVariableGoto: Prisma.JsonNull,
       },
     });
   }
@@ -178,6 +178,7 @@ export class WebhookService {
   /** Processa captura de variável pendente — retorna true se havia captura pendente */
   private async processVariableCapture(
     bot: any,
+    channel: ChannelConfig,
     from: string,
     conversation: any,
     text: string,
@@ -186,16 +187,15 @@ export class WebhookService {
       return false;
     }
 
-    const apiKey = bot.whatsappChannel.dialog360ApiKey;
     const { valid, parsed, errorMessage } = this.validateVariableValue(text, conversation.pendingVariableType);
 
     if (!valid) {
-      const result = await this.dialog360.sendTextMessage(apiKey, from, errorMessage!);
+      const result = await this.messaging.sendTextMessage(channel, from, errorMessage!);
       await this.conversationService.saveMessage(
         conversation.id,
         'OUTBOUND',
         errorMessage!,
-        result?.messages?.[0]?.id,
+        result?.messageId,
       );
       return true;
     }
@@ -218,17 +218,17 @@ export class WebhookService {
       `Valor registrado para *${conversation.pendingVariableName}*: ${parsed}`,
       conversation.id,
     );
-    const confirmResult = await this.dialog360.sendTextMessage(apiKey, from, confirmMsg);
+    const confirmResult = await this.messaging.sendTextMessage(channel, from, confirmMsg);
     await this.conversationService.saveMessage(
       conversation.id,
       'OUTBOUND',
       confirmMsg,
-      confirmResult?.messages?.[0]?.id,
+      confirmResult?.messageId,
     );
 
     // Executar goto pendente (se houver)
     if (pendingGoto) {
-      await this.executeGoto(bot.id, apiKey, from, conversation.id, pendingGoto);
+      await this.executeGoto(bot.id, channel, from, conversation.id, pendingGoto);
     }
 
     return true;
@@ -237,19 +237,19 @@ export class WebhookService {
   /** Inicia captura de variável: envia prompt e marca conversa como esperando */
   private async startVariableCapture(
     botId: string,
-    apiKey: string,
+    channel: ChannelConfig,
     to: string,
     conversationId: string,
     variableConfig: CaptureVariableConfig,
     goto?: GotoConfig,
   ) {
     const promptMsg = await this.interpolateVariables(variableConfig.promptMessage, conversationId);
-    const result = await this.dialog360.sendTextMessage(apiKey, to, promptMsg);
+    const result = await this.messaging.sendTextMessage(channel, to, promptMsg);
     await this.conversationService.saveMessage(
       conversationId,
       'OUTBOUND',
       promptMsg,
-      result?.messages?.[0]?.id,
+      result?.messageId,
     );
 
     await this.setWaitingForVariable(conversationId, variableConfig, goto);
@@ -304,7 +304,7 @@ export class WebhookService {
 
   private async sendMenu(
     botId: string,
-    apiKey: string,
+    channel: ChannelConfig,
     to: string,
     conversationId: string,
     menuTrigger: string,
@@ -319,8 +319,8 @@ export class WebhookService {
       ? await this.interpolateVariables(menu.body, conversationId)
       : menu.title;
 
-    const result = await this.dialog360.sendInteractiveListMessage(
-      apiKey,
+    const result = await this.messaging.sendInteractiveListMessage(
+      channel,
       to,
       menu.title,
       bodyText,
@@ -334,18 +334,18 @@ export class WebhookService {
       conversationId,
       'OUTBOUND',
       menuText,
-      result?.messages?.[0]?.id,
+      result?.messageId,
     );
 
     // Se o menu tem captureVariable, iniciar captura após mostrar o menu
     if (captureVariable) {
-      await this.startVariableCapture(botId, apiKey, to, conversationId, captureVariable);
+      await this.startVariableCapture(botId, channel, to, conversationId, captureVariable);
     }
   }
 
   private async sendKeywordResponse(
     botId: string,
-    apiKey: string,
+    channel: ChannelConfig,
     to: string,
     conversationId: string,
     keywordTrigger: string,
@@ -354,12 +354,12 @@ export class WebhookService {
     if (!keyword) throw new Error(`Keyword '${keywordTrigger}' não encontrada`);
 
     const responseText = await this.interpolateVariables(keyword.response, conversationId);
-    const result = await this.dialog360.sendTextMessage(apiKey, to, responseText);
+    const result = await this.messaging.sendTextMessage(channel, to, responseText);
     await this.conversationService.saveMessage(
       conversationId,
       'OUTBOUND',
       responseText,
-      result?.messages?.[0]?.id,
+      result?.messageId,
     );
 
     return {
@@ -370,7 +370,7 @@ export class WebhookService {
 
   private async executeGoto(
     botId: string,
-    apiKey: string,
+    channel: ChannelConfig,
     to: string,
     conversationId: string,
     goto?: GotoConfig,
@@ -378,22 +378,22 @@ export class WebhookService {
     if (!goto) return false;
 
     if (goto.type === 'MENU') {
-      await this.sendMenu(botId, apiKey, to, conversationId, goto.target);
+      await this.sendMenu(botId, channel, to, conversationId, goto.target);
       return true;
     }
 
     if (goto.type === 'KEYWORD') {
-      const { goto: nextGoto, captureVariable } = await this.sendKeywordResponse(botId, apiKey, to, conversationId, goto.target);
+      const { goto: nextGoto, captureVariable } = await this.sendKeywordResponse(botId, channel, to, conversationId, goto.target);
 
       // Se a keyword tem captura de variável, iniciar captura (goto será executado após captura)
       if (captureVariable) {
-        await this.startVariableCapture(botId, apiKey, to, conversationId, captureVariable, nextGoto);
+        await this.startVariableCapture(botId, channel, to, conversationId, captureVariable, nextGoto);
         return true;
       }
 
       // Se a keyword tiver goto, seguir a cadeia
       if (nextGoto) {
-        await this.executeGoto(botId, apiKey, to, conversationId, nextGoto);
+        await this.executeGoto(botId, channel, to, conversationId, nextGoto);
       }
       return true;
     }
@@ -403,13 +403,13 @@ export class WebhookService {
 
   private async executeFallback(
     bot: any,
+    channel: ChannelConfig,
     from: string,
     conversationId: string,
     reason: string,
   ) {
     const flow = this.parseFlowConfig(bot.flowConfig);
     const fallback = flow.fallback;
-    const apiKey = bot.whatsappChannel.dialog360ApiKey;
 
     if (!fallback?.message) {
       this.logger.warn(`Falha no fluxo sem fallback configurado: ${reason}`);
@@ -417,21 +417,22 @@ export class WebhookService {
     }
 
     const fallbackMsg = await this.interpolateVariables(fallback.message, conversationId);
-    const result = await this.dialog360.sendTextMessage(apiKey, from, fallbackMsg);
+    const result = await this.messaging.sendTextMessage(channel, from, fallbackMsg);
     await this.conversationService.saveMessage(
       conversationId,
       'OUTBOUND',
       fallbackMsg,
-      result?.messages?.[0]?.id,
+      result?.messageId,
     );
 
     if (fallback.goto) {
-      await this.executeGoto(bot.id, apiKey, from, conversationId, fallback.goto);
+      await this.executeGoto(bot.id, channel, from, conversationId, fallback.goto);
     }
   }
 
   private async processConfiguredFlowStep(
     bot: any,
+    channel: ChannelConfig,
     from: string,
     conversation: any,
   ): Promise<boolean> {
@@ -449,7 +450,7 @@ export class WebhookService {
 
         await this.sendMenu(
           bot.id,
-          bot.whatsappChannel.dialog360ApiKey,
+          channel,
           from,
           conversation.id,
           step.menuTrigger,
@@ -467,7 +468,7 @@ export class WebhookService {
 
         const { goto: nextGoto, captureVariable } = await this.sendKeywordResponse(
           bot.id,
-          bot.whatsappChannel.dialog360ApiKey,
+          channel,
           from,
           conversation.id,
           step.keywordTrigger,
@@ -477,7 +478,7 @@ export class WebhookService {
         if (captureVariable) {
           await this.startVariableCapture(
             bot.id,
-            bot.whatsappChannel.dialog360ApiKey,
+            channel,
             from,
             conversation.id,
             captureVariable,
@@ -486,7 +487,7 @@ export class WebhookService {
         } else if (nextGoto) {
           await this.executeGoto(
             bot.id,
-            bot.whatsappChannel.dialog360ApiKey,
+            channel,
             from,
             conversation.id,
             nextGoto,
@@ -500,7 +501,7 @@ export class WebhookService {
         return true;
       }
     } catch (error) {
-      await this.executeFallback(bot, from, conversation.id, error.message);
+      await this.executeFallback(bot, channel, from, conversation.id, error.message);
       return true;
     }
 
@@ -525,8 +526,8 @@ export class WebhookService {
         return;
       }
 
-      const apiKey = bot.whatsappChannel.dialog360ApiKey;
-      await this.dialog360.markAsRead(apiKey, messageId);
+      const channel = MessagingService.fromChannel(bot.whatsappChannel);
+      await this.messaging.markAsRead(channel, messageId);
 
       const conversation = await this.conversationService.getOrCreate(
         botId,
@@ -560,7 +561,7 @@ export class WebhookService {
       }
 
       // Verificar se há captura de variável pendente
-      const handledByCapture = await this.processVariableCapture(bot, from, conversation, text);
+      const handledByCapture = await this.processVariableCapture(bot, channel, from, conversation, text);
       if (handledByCapture) return;
 
       // Primeira interação: usar initialInteraction (goto) ou initialMessage (texto legado)
@@ -569,48 +570,48 @@ export class WebhookService {
 
         if (flow.initialInteraction) {
           try {
-            await this.executeGoto(bot.id, apiKey, from, conversation.id, flow.initialInteraction);
+            await this.executeGoto(bot.id, channel, from, conversation.id, flow.initialInteraction);
             return;
           } catch (error) {
             this.logger.warn(`Falha ao executar initialInteraction: ${error.message}`);
-            await this.executeFallback(bot, from, conversation.id, error.message);
+            await this.executeFallback(bot, channel, from, conversation.id, error.message);
             return;
           }
         } else if (bot.initialMessage) {
-          const initialResult = await this.dialog360.sendTextMessage(apiKey, from, bot.initialMessage);
+          const initialResult = await this.messaging.sendTextMessage(channel, from, bot.initialMessage);
           await this.conversationService.saveMessage(
             conversation.id,
             'OUTBOUND',
             bot.initialMessage,
-            initialResult?.messages?.[0]?.id,
+            initialResult?.messageId,
           );
         }
       }
 
-      const handledByFlow = await this.processConfiguredFlowStep(bot, from, conversation);
+      const handledByFlow = await this.processConfiguredFlowStep(bot, channel, from, conversation);
       if (handledByFlow) return;
 
       const menuMatch = await this.menuService.findMenuMatch(botId, text);
       if (menuMatch) {
         const { menu } = menuMatch;
-        await this.sendMenu(botId, apiKey, from, conversation.id, menu.trigger);
+        await this.sendMenu(botId, channel, from, conversation.id, menu.trigger);
         return;
       }
 
       const optionMatch = await this.menuService.findOptionResponse(botId, text);
       if (optionMatch) {
         if (optionMatch.option.goto) {
-          await this.executeGoto(botId, apiKey, from, conversation.id, optionMatch.option.goto);
+          await this.executeGoto(botId, channel, from, conversation.id, optionMatch.option.goto);
           return;
         }
 
         const responseText = `Você selecionou: ${optionMatch.option.title}`;
-        const result = await this.dialog360.sendTextMessage(apiKey, from, responseText);
+        const result = await this.messaging.sendTextMessage(channel, from, responseText);
         await this.conversationService.saveMessage(
           conversation.id,
           'OUTBOUND',
           responseText,
-          result?.messages?.[0]?.id,
+          result?.messageId,
         );
         return;
       }
@@ -623,23 +624,23 @@ export class WebhookService {
           const match = await this.keywordService.findMatch(botId, text);
           if (match) {
             responseText = await this.interpolateVariables(match.response, conversation.id);
-            const result = await this.dialog360.sendTextMessage(apiKey, from, responseText);
+            const result = await this.messaging.sendTextMessage(channel, from, responseText);
             await this.conversationService.saveMessage(
               conversation.id,
               'OUTBOUND',
               responseText,
-              result?.messages?.[0]?.id,
+              result?.messageId,
             );
 
             // Se tiver captureVariable, iniciar captura (goto executará após captura)
             if (match.captureVariable) {
-              await this.startVariableCapture(botId, apiKey, from, conversation.id, match.captureVariable, match.goto);
+              await this.startVariableCapture(botId, channel, from, conversation.id, match.captureVariable, match.goto);
               return;
             }
 
             // Se tiver goto, navegar
             if (match.goto) {
-              await this.executeGoto(botId, apiKey, from, conversation.id, match.goto);
+              await this.executeGoto(botId, channel, from, conversation.id, match.goto);
             }
             return;
           }
@@ -655,21 +656,21 @@ export class WebhookService {
           const match = await this.keywordService.findMatch(botId, text);
           if (match) {
             responseText = await this.interpolateVariables(match.response, conversation.id);
-            const result = await this.dialog360.sendTextMessage(apiKey, from, responseText);
+            const result = await this.messaging.sendTextMessage(channel, from, responseText);
             await this.conversationService.saveMessage(
               conversation.id,
               'OUTBOUND',
               responseText,
-              result?.messages?.[0]?.id,
+              result?.messageId,
             );
 
             if (match.captureVariable) {
-              await this.startVariableCapture(botId, apiKey, from, conversation.id, match.captureVariable, match.goto);
+              await this.startVariableCapture(botId, channel, from, conversation.id, match.captureVariable, match.goto);
               return;
             }
 
             if (match.goto) {
-              await this.executeGoto(botId, apiKey, from, conversation.id, match.goto);
+              await this.executeGoto(botId, channel, from, conversation.id, match.goto);
             }
             return;
           }
@@ -680,13 +681,13 @@ export class WebhookService {
 
       if (responseText) {
         const interpolated = await this.interpolateVariables(responseText, conversation.id);
-        const result = await this.dialog360.sendTextMessage(apiKey, from, interpolated);
+        const result = await this.messaging.sendTextMessage(channel, from, interpolated);
 
         await this.conversationService.saveMessage(
           conversation.id,
           'OUTBOUND',
           interpolated,
-          result?.messages?.[0]?.id,
+          result?.messageId,
         );
       }
     } catch (error) {
@@ -711,8 +712,8 @@ export class WebhookService {
 
       if (!bot || !bot.isActive || !bot.whatsappChannel) return;
 
-      const apiKey = bot.whatsappChannel.dialog360ApiKey;
-      await this.dialog360.markAsRead(apiKey, messageId);
+      const channel = MessagingService.fromChannel(bot.whatsappChannel);
+      await this.messaging.markAsRead(channel, messageId);
 
       const conversation = await this.conversationService.getOrCreate(botId, from, contactName);
 
@@ -724,15 +725,15 @@ export class WebhookService {
       );
 
       // Se a conversa está aguardando variável, a seleção interativa pode ser usada como valor
-      const handledByCapture = await this.processVariableCapture(bot, from, conversation, selectedTitle);
+      const handledByCapture = await this.processVariableCapture(bot, channel, from, conversation, selectedTitle);
       if (handledByCapture) return;
 
       const optionMatch = await this.menuService.findOptionResponse(botId, selectedId);
       if (optionMatch?.option.goto) {
         try {
-          await this.executeGoto(botId, apiKey, from, conversation.id, optionMatch.option.goto);
+          await this.executeGoto(botId, channel, from, conversation.id, optionMatch.option.goto);
         } catch (error) {
-          await this.executeFallback(bot, from, conversation.id, error.message);
+          await this.executeFallback(bot, channel, from, conversation.id, error.message);
         }
         return;
       }
@@ -741,12 +742,12 @@ export class WebhookService {
         ? `Você selecionou: ${optionMatch.option.title}${optionMatch.option.description ? '\n' + optionMatch.option.description : ''}`
         : `Opção selecionada: ${selectedTitle}`;
 
-      const result = await this.dialog360.sendTextMessage(apiKey, from, responseText);
+      const result = await this.messaging.sendTextMessage(channel, from, responseText);
       await this.conversationService.saveMessage(
         conversation.id,
         'OUTBOUND',
         responseText,
-        result?.messages?.[0]?.id,
+        result?.messageId,
       );
     } catch (error) {
       this.logger.error(`Erro processando resposta interativa: ${error.message}`, error.stack);
@@ -765,8 +766,14 @@ export class WebhookService {
       const mappedStatus = statusMap[status];
       if (!mappedStatus) return;
 
+      // Try both dialog360MsgId and externalMsgId
       await this.prisma.message.updateMany({
-        where: { dialog360MsgId: messageId },
+        where: {
+          OR: [
+            { dialog360MsgId: messageId },
+            { externalMsgId: messageId },
+          ],
+        },
         data: { status: mappedStatus },
       });
     } catch (error) {

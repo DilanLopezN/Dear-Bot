@@ -1,0 +1,219 @@
+.financeiro {}
+
+/* ── Current Plan Banner ── */
+.financeiro__banner {
+  background: var(--color-bg-card);
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  padding: 28px 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.financeiro__banner-left {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.financeiro__banner-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: var(--radius-lg);
+  background: var(--color-accent-glow);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.financeiro__banner-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 5px;
+}
+
+.financeiro__banner-name {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.financeiro__banner-right {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.financeiro__banner-stat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ── Plan Card ── */
+.financeiro__plan-card {
+  background: var(--color-bg-card);
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  padding: 28px;
+  transition: border-color 0.18s, box-shadow 0.18s;
+  display: flex;
+  flex-direction: column;
+}
+
+.financeiro__plan-card--current {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 1px var(--color-accent), 0 8px 32px var(--color-shadow-accent);
+}
+
+.financeiro__plan-card:not(.financeiro__plan-card--current):hover {
+  border-color: var(--color-border-light);
+}
+
+.financeiro__plan-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.financeiro__plan-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.financeiro__plan-price {
+  font-family: var(--font-display);
+  font-size: 30px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin-bottom: 4px;
+}
+
+.financeiro__plan-period {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--color-text-muted);
+  margin-left: 4px;
+}
+
+.financeiro__plan-features {
+  list-style: none;
+  margin-top: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1;
+}
+
+.financeiro__plan-feature {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.financeiro__plan-btn {
+  margin-top: 24px;
+  width: 100%;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  font-size: 13.5px;
+  font-weight: 600;
+  font-family: inherit;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: background 0.18s, opacity 0.18s;
+}
+
+.financeiro__plan-btn--current {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-muted);
+  cursor: default;
+}
+
+.financeiro__plan-btn--upgrade {
+  background: var(--color-accent);
+  color: #ffffff;
+  box-shadow: 0 4px 16px var(--color-shadow-accent);
+}
+
+.financeiro__plan-btn--upgrade:hover {
+  background: var(--color-accent-hover);
+}
+
+/* ── Invoices ── */
+.financeiro__invoices {
+  background: var(--color-bg-card);
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  padding: 24px;
+}
+
+.financeiro__invoices-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 20px;
+}
+
+.financeiro__invoice-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.financeiro__invoice-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-radius: var(--radius-md);
+  background: var(--color-bg-tertiary);
+}
+
+.financeiro__invoice-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.financeiro__invoice-date {
+  font-size: 13px;
+  color: var(--color-text-primary);
+}
+
+.financeiro__invoice-right {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.financeiro__invoice-amount {
+  font-size: 13px;
+  color: var(--color-text-primary);
+}
+
+.financeiro__invoice-status {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: #4ade80;
+}

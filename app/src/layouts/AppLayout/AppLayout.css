@@ -1,0 +1,18 @@
+.app-layout {
+  display: flex;
+  height: 100vh;
+  background: var(--color-bg-primary);
+  overflow: hidden;
+}
+
+.app-layout__main {
+  flex: 1;
+  overflow-y: auto;
+  min-width: 0;
+}
+
+.app-layout__content {
+  padding: 36px 40px;
+  max-width: 1480px;
+  margin: 0 auto;
+}

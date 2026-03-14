@@ -22,15 +22,12 @@
     "zustand": "^5.0.0"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "^4.2.1",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^4.5.0",
-    "autoprefixer": "^10.4.21",
     "concurrently": "^9.1.0",
     "electron": "^35.0.0",
     "electron-builder": "^26.0.0",
-    "tailwindcss": "^4.2.1",
     "typescript": "^5.9.3",
     "vite": "^6.3.0",
     "wait-on": "^8.0.0"

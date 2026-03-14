@@ -81,6 +81,32 @@ export interface InteractiveMenu {
   createdAt: string;
 }
 
+export interface ChatConversation {
+  id: string;
+  botId: string;
+  botName: string;
+  botResponseMode: string;
+  contactPhone: string;
+  contactName: string | null;
+  status: 'BOT' | 'WAITING' | 'HUMAN' | 'CLOSED';
+  humanTakeoverAt: string | null;
+  lastMessageAt: string;
+  messageCount: number;
+  lastMessage: ChatMessage | null;
+  createdAt: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  conversationId: string;
+  direction: 'INBOUND' | 'OUTBOUND';
+  content: string;
+  status: string;
+  senderType: 'CONTACT' | 'BOT' | 'HUMAN';
+  dialog360MsgId: string | null;
+  createdAt: string;
+}
+
 /** Extrai a mensagem de erro de uma resposta axios de forma legível */
 export function extractApiError(err: unknown): string {
   if (err instanceof AxiosError) {
@@ -260,6 +286,36 @@ class ApiService {
     const { data } = await this.client.get(
       `/bots/${botId}/conversations/${conversationId}/messages?take=${take}`,
     );
+    return data;
+  }
+
+  // Chat Management
+  async getChats(filters?: { botId?: string; minWaitMinutes?: number; status?: string }) {
+    const params = new URLSearchParams();
+    if (filters?.botId) params.set('botId', filters.botId);
+    if (filters?.minWaitMinutes) params.set('minWaitMinutes', String(filters.minWaitMinutes));
+    if (filters?.status) params.set('status', filters.status);
+    const { data } = await this.client.get(`/chats?${params.toString()}`);
+    return data;
+  }
+
+  async getChatMessages(conversationId: string, take = 100) {
+    const { data } = await this.client.get(`/chats/${conversationId}/messages?take=${take}`);
+    return data;
+  }
+
+  async takeoverChat(conversationId: string) {
+    const { data } = await this.client.post(`/chats/${conversationId}/takeover`);
+    return data;
+  }
+
+  async releaseChat(conversationId: string) {
+    const { data } = await this.client.post(`/chats/${conversationId}/release`);
+    return data;
+  }
+
+  async sendChatMessage(conversationId: string, content: string) {
+    const { data } = await this.client.post(`/chats/${conversationId}/send`, { content });
     return data;
   }
 

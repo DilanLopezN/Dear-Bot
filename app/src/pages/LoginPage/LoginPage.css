@@ -1,0 +1,220 @@
+.login-page {
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-bg-primary);
+  position: relative;
+  overflow: hidden;
+}
+
+/* ── Background glows ── */
+.login-page__bg {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.login-page__glow {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(100px);
+}
+
+.login-page__glow--top {
+  top: -20%;
+  left: -10%;
+  width: 560px;
+  height: 560px;
+  background: var(--color-accent);
+  opacity: 0.045;
+}
+
+.login-page__glow--bottom {
+  bottom: -20%;
+  right: -10%;
+  width: 480px;
+  height: 480px;
+  background: #065f46;
+  opacity: 0.04;
+}
+
+/* ── Content wrapper ── */
+.login-page__wrapper {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 460px;
+  padding: 0 24px;
+}
+
+/* ── Brand logo ── */
+.login-page__brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: center;
+  margin-bottom: 36px;
+}
+
+.login-page__brand-icon {
+  width: 46px;
+  height: 46px;
+  border-radius: var(--radius-md);
+  background: var(--color-accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 28px var(--color-shadow-accent);
+}
+
+.login-page__brand-name {
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  letter-spacing: -0.03em;
+}
+
+/* ── Card ── */
+.login-page__card {
+  background: var(--color-bg-card);
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  padding: 36px 40px;
+  box-shadow: 0 32px 80px var(--color-shadow);
+}
+
+/* ── Tabs ── */
+.login-page__tabs {
+  display: flex;
+  background: var(--color-bg-tertiary);
+  border-radius: var(--radius-md);
+  padding: 4px;
+  margin-bottom: 28px;
+  gap: 4px;
+}
+
+.login-page__tab {
+  flex: 1;
+  padding: 10px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  transition: background 0.18s, color 0.18s;
+  cursor: pointer;
+  border: none;
+  background: none;
+  font-family: inherit;
+}
+
+.login-page__tab:hover {
+  color: var(--color-text-primary);
+}
+
+.login-page__tab--active {
+  background: var(--color-accent);
+  color: #ffffff;
+}
+
+/* ── Form heading ── */
+.login-page__heading {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin-bottom: 6px;
+}
+
+.login-page__subheading {
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  margin-bottom: 28px;
+}
+
+.login-page__email-highlight {
+  color: var(--color-accent);
+  font-weight: 500;
+}
+
+/* ── Form ── */
+.login-page__form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* ── Submit button ── */
+.login-page__submit {
+  width: 100%;
+  padding: 13px;
+  border-radius: var(--radius-md);
+  background: var(--color-accent);
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: background 0.18s, box-shadow 0.18s, opacity 0.18s;
+  box-shadow: 0 6px 20px var(--color-shadow-accent);
+}
+
+.login-page__submit:hover:not(:disabled) {
+  background: var(--color-accent-hover);
+}
+
+.login-page__submit:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* ── Back button ── */
+.login-page__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  margin-bottom: 20px;
+  transition: color 0.15s;
+  font-family: inherit;
+}
+.login-page__back:hover {
+  color: var(--color-text-primary);
+}
+
+/* ── Token input ── */
+.login-page__token-input {
+  letter-spacing: 6px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 18px;
+}
+
+/* ── Footer ── */
+.login-page__footer {
+  text-align: center;
+  font-size: 13px;
+  color: var(--color-text-muted);
+  margin-top: 24px;
+}
+
+.login-page__footer-link {
+  color: var(--color-accent);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.login-page__footer-link:hover {
+  text-decoration: underline;
+}

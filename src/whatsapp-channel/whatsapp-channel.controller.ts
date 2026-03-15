@@ -47,4 +47,20 @@ export class WhatsappChannelController {
   ) {
     return this.service.getEvolutionConnectionState(userId, botId);
   }
+
+  @Get('baileys/qrcode')
+  getBaileysQrCode(
+    @CurrentUser('id') userId: string,
+    @Param('botId') botId: string,
+  ) {
+    return this.service.getBaileysQrCode(userId, botId);
+  }
+
+  @Get('baileys/status')
+  getBaileysConnectionState(
+    @CurrentUser('id') userId: string,
+    @Param('botId') botId: string,
+  ) {
+    return this.service.getBaileysConnectionState(userId, botId);
+  }
 }

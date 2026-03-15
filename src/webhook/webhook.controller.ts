@@ -1,5 +1,7 @@
-import { Controller, Post, Param, Body, Logger, HttpCode } from '@nestjs/common';
+import { Controller, Post, Param, Body, Logger, HttpCode, OnModuleInit } from '@nestjs/common';
 import { WebhookService } from './webhook.service';
+import { BaileysService } from '../services/baileys.service';
+import { PrismaService } from '../prisma/prisma.service';
 
 /**
  * Payload do Dialog360 webhook (Cloud API format)
@@ -47,10 +49,144 @@ interface EvolutionWebhookPayload {
 }
 
 @Controller('webhook')
-export class WebhookController {
+export class WebhookController implements OnModuleInit {
   private readonly logger = new Logger(WebhookController.name);
 
-  constructor(private webhookService: WebhookService) {}
+  constructor(
+    private webhookService: WebhookService,
+    private baileysService: BaileysService,
+    private prisma: PrismaService,
+  ) {}
+
+  async onModuleInit() {
+    // Registra callback do Baileys para processar mensagens recebidas
+    this.baileysService.setWebhookCallback(
+      async (sessionId: string, event: string, data: any) => {
+        try {
+          await this.handleBaileysEvent(sessionId, event, data);
+        } catch (error) {
+          this.logger.error(`Erro ao processar evento Baileys: ${error.message}`, error.stack);
+        }
+      },
+    );
+
+    // Reconecta sessões Baileys existentes
+    const baileysChannels = await this.prisma.whatsappChannel.findMany({
+      where: { provider: 'BAILEYS' },
+    });
+
+    for (const channel of baileysChannels) {
+      if (channel.baileysSessionId) {
+        try {
+          await this.baileysService.createSession(channel.baileysSessionId);
+          this.logger.log(`Sessão Baileys '${channel.baileysSessionId}' reconectada no startup`);
+        } catch (error) {
+          this.logger.warn(`Falha ao reconectar sessão Baileys '${channel.baileysSessionId}': ${error.message}`);
+        }
+      }
+    }
+  }
+
+  /** Processa eventos internos do Baileys */
+  private async handleBaileysEvent(sessionId: string, event: string, data: any) {
+    // Busca o canal pelo sessionId
+    const channel = await this.prisma.whatsappChannel.findFirst({
+      where: { baileysSessionId: sessionId, provider: 'BAILEYS' },
+    });
+
+    if (!channel) {
+      this.logger.warn(`Canal Baileys não encontrado para sessão '${sessionId}'`);
+      return;
+    }
+
+    const botId = channel.botId;
+
+    if (event === 'messages.upsert') {
+      const messages = data.messages || [];
+
+      for (const msg of messages) {
+        const key = msg.key;
+        if (!key || key.fromMe) continue;
+
+        const remoteJid = key.remoteJid;
+        if (!remoteJid || remoteJid.endsWith('@g.us')) continue; // Ignora grupos
+
+        const from = remoteJid.replace(/@.*$/, '');
+        const messageId = key.id || '';
+        const contactName = msg.pushName || undefined;
+
+        const message = msg.message;
+        if (!message) continue;
+
+        // Mensagem de texto
+        const textContent =
+          message.conversation ||
+          message.extendedTextMessage?.text;
+
+        if (textContent) {
+          await this.webhookService.processIncomingMessage(
+            botId,
+            from,
+            textContent,
+            messageId,
+            contactName,
+          );
+          continue;
+        }
+
+        // Respostas de lista interativa
+        const listResponse = message.listResponseMessage;
+        if (listResponse) {
+          await this.webhookService.processInteractiveResponse(
+            botId,
+            from,
+            'list_reply',
+            listResponse.singleSelectReply?.selectedRowId || listResponse.title || '',
+            listResponse.title || '',
+            messageId,
+            contactName,
+          );
+          continue;
+        }
+
+        // Respostas de botão
+        const buttonResponse = message.buttonsResponseMessage;
+        if (buttonResponse) {
+          await this.webhookService.processInteractiveResponse(
+            botId,
+            from,
+            'button_reply',
+            buttonResponse.selectedButtonId || '',
+            buttonResponse.selectedDisplayText || '',
+            messageId,
+            contactName,
+          );
+          continue;
+        }
+      }
+    }
+
+    if (event === 'messages.update') {
+      const updates = Array.isArray(data) ? data : [data];
+
+      for (const update of updates) {
+        const messageId = update.key?.id;
+        const status = update.update?.status;
+        if (!messageId || status === undefined) continue;
+
+        const statusMap: Record<number, string> = {
+          2: 'sent',
+          3: 'delivered',
+          4: 'read',
+          5: 'read',
+        };
+        const mappedStatus = statusMap[status];
+        if (mappedStatus) {
+          await this.webhookService.processStatusUpdate(botId, messageId, mappedStatus);
+        }
+      }
+    }
+  }
 
   /** Dialog360 webhook endpoint */
   @Post(':botId')

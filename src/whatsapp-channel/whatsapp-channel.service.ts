@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { BotService } from '../bot/bot.service';
 import { Dialog360Service } from '../services/dialog360.service';
 import { EvolutionService } from '../services/evolution.service';
+import { BaileysService } from '../services/baileys.service';
 import { CreateWhatsappChannelDto, UpdateWhatsappChannelDto } from './dto/whatsapp-channel.dto';
 import { ConfigService } from '@nestjs/config';
 import { v4 as uuid } from 'uuid';
@@ -16,6 +17,7 @@ export class WhatsappChannelService {
     private botService: BotService,
     private dialog360: Dialog360Service,
     private evolution: EvolutionService,
+    private baileys: BaileysService,
     private config: ConfigService,
   ) {}
 
@@ -38,6 +40,26 @@ export class WhatsappChannelService {
 
       const webhookSecret = uuid();
       const baseUrl = this.config.get('WEBHOOK_BASE_URL');
+
+      if (provider === 'BAILEYS') {
+        const sessionId = dto.baileysSessionId || `baileys-${botId}`;
+
+        // Cria sessão Baileys
+        await this.baileys.createSession(sessionId);
+
+        const channel = await this.prisma.whatsappChannel.create({
+          data: {
+            botId,
+            phoneNumber: dto.phoneNumber,
+            provider: 'BAILEYS',
+            baileysSessionId: sessionId,
+            webhookSecret,
+          },
+        });
+
+        this.logger.log(`Canal WhatsApp (Baileys) criado com sucesso para bot ${botId}`);
+        return channel;
+      }
 
       if (provider === 'EVOLUTION') {
         if (!dto.evolutionApiUrl || !dto.evolutionApiKey || !dto.evolutionInstance) {
@@ -135,6 +157,36 @@ export class WhatsappChannelService {
     );
   }
 
+  /** Busca QR Code para Baileys */
+  async getBaileysQrCode(userId: string, botId: string) {
+    await this.botService.findOne(userId, botId);
+
+    const channel = await this.prisma.whatsappChannel.findUnique({
+      where: { botId },
+    });
+
+    if (!channel || channel.provider !== 'BAILEYS') {
+      throw new BadRequestException('Canal Baileys não encontrado');
+    }
+
+    return this.baileys.getQrCode(channel.baileysSessionId!);
+  }
+
+  /** Verifica estado da conexão Baileys */
+  async getBaileysConnectionState(userId: string, botId: string) {
+    await this.botService.findOne(userId, botId);
+
+    const channel = await this.prisma.whatsappChannel.findUnique({
+      where: { botId },
+    });
+
+    if (!channel || channel.provider !== 'BAILEYS') {
+      throw new BadRequestException('Canal Baileys não encontrado');
+    }
+
+    return this.baileys.getConnectionState(channel.baileysSessionId!);
+  }
+
   async update(userId: string, botId: string, dto: UpdateWhatsappChannelDto) {
     this.logger.log(`Atualizando canal WhatsApp do bot ${botId}`);
     try {
@@ -159,6 +211,15 @@ export class WhatsappChannelService {
       const channel = await this.prisma.whatsappChannel.findUnique({
         where: { botId },
       });
+
+      // Tenta remover sessão Baileys se aplicável
+      if (channel?.provider === 'BAILEYS' && channel.baileysSessionId) {
+        try {
+          await this.baileys.logoutSession(channel.baileysSessionId);
+        } catch (e) {
+          this.logger.warn(`Falha ao desconectar sessão Baileys: ${e.message}`);
+        }
+      }
 
       // Tenta remover instância na Evolution se aplicável
       if (channel?.provider === 'EVOLUTION' && channel.evolutionApiUrl && channel.evolutionApiKey && channel.evolutionInstance) {

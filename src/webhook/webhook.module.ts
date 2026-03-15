@@ -5,9 +5,10 @@ import { ConversationModule } from '../conversation/conversation.module';
 import { KeywordModule } from '../keyword/keyword.module';
 import { ServicesModule } from '../services/services.module';
 import { MenuModule } from '../menu/menu.module';
+import { PrismaModule } from '../prisma/prisma.module';
 
 @Module({
-  imports: [ConversationModule, KeywordModule, ServicesModule, MenuModule],
+  imports: [ConversationModule, KeywordModule, ServicesModule, MenuModule, PrismaModule],
   controllers: [WebhookController],
   providers: [WebhookService],
 })

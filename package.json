@@ -26,6 +26,7 @@
     "@nestjs/platform-fastify": "^11.1.16",
     "@prisma/client": "^5.22.0",
     "@tailwindcss/vite": "^4.2.1",
+    "@whiskeysockets/baileys": "^7.0.0-rc.9",
     "axios": "^1.13.6",
     "bcryptjs": "^3.0.3",
     "class-transformer": "^0.5.1",

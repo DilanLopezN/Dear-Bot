@@ -714,7 +714,7 @@ export class WebhookService {
     try {
       const bot = await this.prisma.bot.findUnique({
         where: { id: botId },
-        include: { whatsappChannel: true },
+        include: { whatsappChannel: true, aiConfig: true },
       });
 
       if (!bot || !bot.isActive || !bot.whatsappChannel) return;
@@ -729,16 +729,63 @@ export class WebhookService {
         this.logger.warn(`Falha ao salvar contato ${from}: ${err.message}`),
       );
 
+      // Verificar se é primeira interação (antes de salvar a mensagem)
+      const conversationMessagesCount = await this.prisma.message.count({
+        where: { conversationId: conversation.id },
+      });
+      const isFirstInteraction = conversationMessagesCount === 0;
+
       await this.conversationService.saveMessage(
         conversation.id,
         'INBOUND',
         `[${selectedTitle}]`,
         messageId,
+        'CONTACT',
       );
+
+      // Atualizar lastMessageAt
+      await this.prisma.conversation.update({
+        where: { id: conversation.id },
+        data: { lastMessageAt: new Date() },
+      });
+
+      // Se a conversa está em modo humano, não processar pelo bot
+      if (conversation.status === 'HUMAN') {
+        this.logger.log(`Conversa ${conversation.id} em modo humano, ignorando processamento do bot`);
+        return;
+      }
 
       // Se a conversa está aguardando variável, a seleção interativa pode ser usada como valor
       const handledByCapture = await this.processVariableCapture(bot, channel, from, conversation, selectedTitle);
       if (handledByCapture) return;
+
+      // Primeira interação: usar initialInteraction (goto) ou initialMessage (texto legado)
+      if (isFirstInteraction) {
+        const flow = this.parseFlowConfig(bot.flowConfig);
+
+        if (flow.initialInteraction) {
+          try {
+            await this.executeGoto(bot.id, channel, from, conversation.id, flow.initialInteraction);
+            return;
+          } catch (error) {
+            this.logger.warn(`Falha ao executar initialInteraction: ${error.message}`);
+            await this.executeFallback(bot, channel, from, conversation.id, error.message);
+            return;
+          }
+        } else if (bot.initialMessage) {
+          const initialResult = await this.messaging.sendTextMessage(channel, from, bot.initialMessage);
+          await this.conversationService.saveMessage(
+            conversation.id,
+            'OUTBOUND',
+            bot.initialMessage,
+            initialResult?.messageId,
+          );
+        }
+      }
+
+      // Processar flow steps configurados
+      const handledByFlow = await this.processConfiguredFlowStep(bot, channel, from, conversation);
+      if (handledByFlow) return;
 
       const optionMatch = await this.menuService.findOptionResponse(botId, selectedId);
       if (optionMatch?.option.goto) {
@@ -750,10 +797,115 @@ export class WebhookService {
         return;
       }
 
-      const responseText = optionMatch
-        ? `Você selecionou: ${optionMatch.option.title}${optionMatch.option.description ? '\n' + optionMatch.option.description : ''}`
-        : `Opção selecionada: ${selectedTitle}`;
+      // Se encontrou a opção mas sem goto, mostrar resposta
+      if (optionMatch) {
+        const responseText = `Você selecionou: ${optionMatch.option.title}${optionMatch.option.description ? '\n' + optionMatch.option.description : ''}`;
+        const result = await this.messaging.sendTextMessage(channel, from, responseText);
+        await this.conversationService.saveMessage(
+          conversation.id,
+          'OUTBOUND',
+          responseText,
+          result?.messageId,
+        );
+        return;
+      }
 
+      // Fallback: tentar match por keyword usando o título selecionado
+      const menuMatch = await this.menuService.findMenuMatch(botId, selectedTitle);
+      if (menuMatch) {
+        const { menu } = menuMatch;
+        await this.sendMenu(botId, channel, from, conversation.id, menu.trigger);
+        return;
+      }
+
+      const keywordOptionMatch = await this.menuService.findOptionResponse(botId, selectedTitle);
+      if (keywordOptionMatch?.option.goto) {
+        await this.executeGoto(botId, channel, from, conversation.id, keywordOptionMatch.option.goto);
+        return;
+      }
+
+      // Último fallback: processar como mensagem de texto comum
+      switch (bot.responseMode) {
+        case 'KEYWORDS': {
+          const match = await this.keywordService.findMatch(botId, selectedTitle);
+          if (match) {
+            const responseText = await this.interpolateVariables(match.response, conversation.id);
+            const result = await this.messaging.sendTextMessage(channel, from, responseText);
+            await this.conversationService.saveMessage(
+              conversation.id,
+              'OUTBOUND',
+              responseText,
+              result?.messageId,
+            );
+
+            if (match.captureVariable) {
+              await this.startVariableCapture(botId, channel, from, conversation.id, match.captureVariable, match.goto);
+              return;
+            }
+
+            if (match.goto) {
+              await this.executeGoto(botId, channel, from, conversation.id, match.goto);
+            }
+            return;
+          }
+          break;
+        }
+
+        case 'AI': {
+          const responseText = await this.generateAIResponse(bot, conversation.id, selectedTitle);
+          if (responseText) {
+            const interpolated = await this.interpolateVariables(responseText, conversation.id);
+            const result = await this.messaging.sendTextMessage(channel, from, interpolated);
+            await this.conversationService.saveMessage(
+              conversation.id,
+              'OUTBOUND',
+              interpolated,
+              result?.messageId,
+            );
+          }
+          return;
+        }
+
+        case 'HYBRID': {
+          const match = await this.keywordService.findMatch(botId, selectedTitle);
+          if (match) {
+            const responseText = await this.interpolateVariables(match.response, conversation.id);
+            const result = await this.messaging.sendTextMessage(channel, from, responseText);
+            await this.conversationService.saveMessage(
+              conversation.id,
+              'OUTBOUND',
+              responseText,
+              result?.messageId,
+            );
+
+            if (match.captureVariable) {
+              await this.startVariableCapture(botId, channel, from, conversation.id, match.captureVariable, match.goto);
+              return;
+            }
+
+            if (match.goto) {
+              await this.executeGoto(botId, channel, from, conversation.id, match.goto);
+            }
+            return;
+          }
+
+          const aiResponse = await this.generateAIResponse(bot, conversation.id, selectedTitle);
+          if (aiResponse) {
+            const interpolated = await this.interpolateVariables(aiResponse, conversation.id);
+            const result = await this.messaging.sendTextMessage(channel, from, interpolated);
+            await this.conversationService.saveMessage(
+              conversation.id,
+              'OUTBOUND',
+              interpolated,
+              result?.messageId,
+            );
+          }
+          return;
+        }
+      }
+
+      // Se nenhum handler processou, enviar texto genérico
+      const responseText = `Opção selecionada: ${selectedTitle}`;
       const result = await this.messaging.sendTextMessage(channel, from, responseText);
       await this.conversationService.saveMessage(
         conversation.id,

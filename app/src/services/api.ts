@@ -373,6 +373,124 @@ class ApiService {
   logout() {
     localStorage.removeItem('access_token');
   }
+
+  // ── Contacts ────────────────────────────────────────────────────────────
+
+  async getContacts(botId: string, search?: string) {
+    const params = search ? `?search=${encodeURIComponent(search)}` : '';
+    const { data } = await this.client.get(`/bots/${botId}/contacts${params}`);
+    return data;
+  }
+
+  async getContact(botId: string, id: string) {
+    const { data } = await this.client.get(`/bots/${botId}/contacts/${id}`);
+    return data;
+  }
+
+  async createContact(botId: string, payload: {
+    phone: string;
+    name?: string;
+    email?: string;
+    tags?: string[];
+    notes?: string;
+    customFields?: Record<string, unknown>;
+  }) {
+    const { data } = await this.client.post(`/bots/${botId}/contacts`, payload);
+    return data;
+  }
+
+  async updateContact(botId: string, id: string, payload: Record<string, unknown>) {
+    const { data } = await this.client.put(`/bots/${botId}/contacts/${id}`, payload);
+    return data;
+  }
+
+  async deleteContact(botId: string, id: string) {
+    const { data } = await this.client.delete(`/bots/${botId}/contacts/${id}`);
+    return data;
+  }
+
+  // ── Scheduled Messages ────────────────────────────────────────────────────
+
+  async getScheduledMessages(botId: string, status?: string) {
+    const params = status ? `?status=${status}` : '';
+    const { data } = await this.client.get(`/bots/${botId}/scheduled-messages${params}`);
+    return data;
+  }
+
+  async createScheduledMessage(botId: string, payload: {
+    phone: string;
+    message: string;
+    scheduledAt: string;
+    contactId?: string;
+  }) {
+    const { data } = await this.client.post(`/bots/${botId}/scheduled-messages`, payload);
+    return data;
+  }
+
+  async cancelScheduledMessage(botId: string, id: string) {
+    const { data } = await this.client.post(`/bots/${botId}/scheduled-messages/${id}/cancel`);
+    return data;
+  }
+
+  async deleteScheduledMessage(botId: string, id: string) {
+    const { data } = await this.client.delete(`/bots/${botId}/scheduled-messages/${id}`);
+    return data;
+  }
+
+  // ── Broadcast Lists ────────────────────────────────────────────────────────
+
+  async getBroadcastLists(botId: string) {
+    const { data } = await this.client.get(`/bots/${botId}/broadcast-lists`);
+    return data;
+  }
+
+  async createBroadcastList(botId: string, payload: { name: string; phones?: string[] }) {
+    const { data } = await this.client.post(`/bots/${botId}/broadcast-lists`, payload);
+    return data;
+  }
+
+  async updateBroadcastList(botId: string, id: string, payload: { name?: string; phones?: string[] }) {
+    const { data } = await this.client.put(`/bots/${botId}/broadcast-lists/${id}`, payload);
+    return data;
+  }
+
+  async deleteBroadcastList(botId: string, id: string) {
+    const { data } = await this.client.delete(`/bots/${botId}/broadcast-lists/${id}`);
+    return data;
+  }
+
+  // ── Broadcasts ────────────────────────────────────────────────────────────
+
+  async getBroadcasts(botId: string) {
+    const { data } = await this.client.get(`/bots/${botId}/broadcasts`);
+    return data;
+  }
+
+  async createBroadcast(botId: string, payload: {
+    name: string;
+    message: string;
+    listId?: string;
+    phones?: string[];
+    scheduledAt?: string;
+  }) {
+    const { data } = await this.client.post(`/bots/${botId}/broadcasts`, payload);
+    return data;
+  }
+
+  async sendBroadcastNow(botId: string, id: string) {
+    const { data } = await this.client.post(`/bots/${botId}/broadcasts/${id}/send`);
+    return data;
+  }
+
+  async cancelBroadcast(botId: string, id: string) {
+    const { data } = await this.client.post(`/bots/${botId}/broadcasts/${id}/cancel`);
+    return data;
+  }
+
+  async deleteBroadcast(botId: string, id: string) {
+    const { data } = await this.client.delete(`/bots/${botId}/broadcasts/${id}`);
+    return data;
+  }
 }
 
 export const api = new ApiService();

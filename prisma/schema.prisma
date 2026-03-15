@@ -40,6 +40,22 @@ enum AiProvider {
 enum ChannelProvider {
   DIALOG360
   EVOLUTION
+  BAILEYS
+}
+
+enum ScheduledMessageStatus {
+  PENDING
+  SENT
+  FAILED
+  CANCELLED
+}
+
+enum BroadcastStatus {
+  DRAFT
+  SENDING
+  COMPLETED
+  FAILED
+  CANCELLED
 }
 
 enum VariableType {
@@ -111,12 +127,16 @@ model Bot {
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
 
-  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  aiConfig        AiConfig?        @relation(fields: [aiConfigId], references: [id], onDelete: SetNull)
-  whatsappChannel WhatsappChannel?
-  keywords        Keyword[]
-  conversations   Conversation[]
-  menus           InteractiveMenu[]
+  user              User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  aiConfig          AiConfig?         @relation(fields: [aiConfigId], references: [id], onDelete: SetNull)
+  whatsappChannel   WhatsappChannel?
+  keywords          Keyword[]
+  conversations     Conversation[]
+  menus             InteractiveMenu[]
+  contacts          Contact[]
+  scheduledMessages ScheduledMessage[]
+  broadcastLists    BroadcastList[]
+  broadcasts        Broadcast[]
 
   @@map("bots")
 }
@@ -150,6 +170,10 @@ model WhatsappChannel {
   evolutionApiUrl    String?      // URL da instância Evolution (ex: https://api.evolution.com)
   evolutionApiKey    String?      // Global API Key da Evolution
   evolutionInstance  String?      // Nome da instância na Evolution
+  // Baileys direct fields
+  baileysApiUrl   String?         // URL do servidor Baileys HTTP (ex: http://localhost:3001)
+  baileysApiKey   String?         // API key do servidor Baileys
+  baileysInstance String?         // Nome da sessão/instância Baileys
   webhookSecret   String?
   isVerified      Boolean         @default(false)
   createdAt       DateTime        @default(now())
@@ -235,4 +259,85 @@ model Message {
 
   @@index([conversationId, createdAt])
   @@map("messages")
+}
+
+model Contact {
+  id           String   @id @default(uuid())
+  botId        String
+  phone        String
+  name         String?
+  email        String?
+  tags         String[] @default([])
+  customFields Json?    // { key: value }
+  notes        String?  @db.Text
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  bot               Bot                @relation(fields: [botId], references: [id], onDelete: Cascade)
+  scheduledMessages ScheduledMessage[]
+
+  @@unique([botId, phone])
+  @@index([botId])
+  @@map("contacts")
+}
+
+model ScheduledMessage {
+  id           String                 @id @default(uuid())
+  botId        String
+  contactId    String?
+  phone        String                 // Número de destino
+  message      String                 @db.Text
+  scheduledAt  DateTime
+  status       ScheduledMessageStatus @default(PENDING)
+  sentAt       DateTime?
+  errorMessage String?                @db.Text
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+
+  bot     Bot      @relation(fields: [botId], references: [id], onDelete: Cascade)
+  contact Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  @@index([status, scheduledAt])
+  @@index([botId])
+  @@map("scheduled_messages")
+}
+
+model BroadcastList {
+  id        String   @id @default(uuid())
+  botId     String
+  name      String
+  phones    String[] @default([]) // Lista de números
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bot        Bot         @relation(fields: [botId], references: [id], onDelete: Cascade)
+  broadcasts Broadcast[]
+
+  @@index([botId])
+  @@map("broadcast_lists")
+}
+
+model Broadcast {
+  id              String          @id @default(uuid())
+  botId           String
+  listId          String?
+  name            String
+  message         String          @db.Text
+  phones          String[]        @default([]) // Snapshot dos números no envio
+  status          BroadcastStatus @default(DRAFT)
+  scheduledAt     DateTime?
+  startedAt       DateTime?
+  completedAt     DateTime?
+  totalRecipients Int             @default(0)
+  successCount    Int             @default(0)
+  failCount       Int             @default(0)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  bot  Bot            @relation(fields: [botId], references: [id], onDelete: Cascade)
+  list BroadcastList? @relation(fields: [listId], references: [id], onDelete: SetNull)
+
+  @@index([botId])
+  @@index([status, scheduledAt])
+  @@map("broadcasts")
 }

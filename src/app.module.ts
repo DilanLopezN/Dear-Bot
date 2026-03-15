@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { BotModule } from './bot/bot.module';
@@ -11,10 +12,14 @@ import { ServicesModule } from './services/services.module';
 import { MenuModule } from './menu/menu.module';
 import { AiConfigModule } from './ai-config/ai-config.module';
 import { ChatManagementModule } from './chat-management/chat-management.module';
+import { ContactModule } from './contact/contact.module';
+import { ScheduledMessageModule } from './scheduled-message/scheduled-message.module';
+import { BroadcastModule } from './broadcast/broadcast.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    ScheduleModule.forRoot(),
     PrismaModule,
     AuthModule,
     BotModule,
@@ -26,6 +31,9 @@ import { ChatManagementModule } from './chat-management/chat-management.module';
     MenuModule,
     AiConfigModule,
     ChatManagementModule,
+    ContactModule,
+    ScheduledMessageModule,
+    BroadcastModule,
   ],
 })
 export class AppModule {}

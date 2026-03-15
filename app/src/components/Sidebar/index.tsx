@@ -12,6 +12,9 @@ import {
   Moon,
   Cpu,
   Headset,
+  Users,
+  CalendarClock,
+  Megaphone,
 } from 'lucide-react';
 import './Sidebar.css';
 
@@ -19,6 +22,9 @@ const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/bots', icon: Bot, label: 'Bots' },
   { to: '/chat', icon: Headset, label: 'Chat' },
+  { to: '/contacts', icon: Users, label: 'Contatos' },
+  { to: '/scheduled-messages', icon: CalendarClock, label: 'Agendamentos' },
+  { to: '/broadcast', icon: Megaphone, label: 'Transmissão' },
   { to: '/ai-config', icon: Cpu, label: 'Configuração I.A.' },
   { to: '/relatorios', icon: BarChart3, label: 'Relatórios' },
   { to: '/financeiro', icon: CreditCard, label: 'Financeiro' },

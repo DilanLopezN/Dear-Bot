@@ -7,6 +7,7 @@ import { ClaudeService } from '../services/claude.service';
 import { OpenAIService } from '../services/openai.service';
 import { GeminiService } from '../services/gemini.service';
 import { MessagingService, ChannelConfig } from '../services/messaging.service';
+import { ContactService } from '../contact/contact.service';
 import { Prisma, VariableType } from '@prisma/client';
 
 type MessageStatus = 'SENT' | 'DELIVERED' | 'READ' | 'FAILED';
@@ -44,6 +45,7 @@ export class WebhookService {
     private openaiService: OpenAIService,
     private geminiService: GeminiService,
     private messaging: MessagingService,
+    private contactService: ContactService,
   ) {}
 
   private parseFlowConfig(raw: unknown): FlowConfig {
@@ -535,6 +537,11 @@ export class WebhookService {
         contactName,
       );
 
+      // Salva/atualiza contato automaticamente
+      this.contactService.upsertFromConversation(botId, from, contactName).catch((err) =>
+        this.logger.warn(`Falha ao salvar contato ${from}: ${err.message}`),
+      );
+
       const conversationMessagesCount = await this.prisma.message.count({
         where: { conversationId: conversation.id },
       });
@@ -716,6 +723,11 @@ export class WebhookService {
       await this.messaging.markAsRead(channel, messageId);
 
       const conversation = await this.conversationService.getOrCreate(botId, from, contactName);
+
+      // Salva/atualiza contato automaticamente
+      this.contactService.upsertFromConversation(botId, from, contactName).catch((err) =>
+        this.logger.warn(`Falha ao salvar contato ${from}: ${err.message}`),
+      );
 
       await this.conversationService.saveMessage(
         conversation.id,

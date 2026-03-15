@@ -10,6 +10,9 @@ import RelatoriosPage from '@/pages/RelatoriosPage';
 import FinanceiroPage from '@/pages/FinanceiroPage';
 import AiConfigPage from '@/pages/AiConfigPage';
 import ChatPage from '@/pages/ChatPage';
+import ContactsPage from '@/pages/ContactsPage';
+import ScheduledMessagesPage from '@/pages/ScheduledMessagesPage';
+import BroadcastPage from '@/pages/BroadcastPage';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuthStore();
@@ -42,6 +45,9 @@ export default function App() {
           <Route path="/" element={<DashboardPage />} />
           <Route path="/bots" element={<BotsPage />} />
           <Route path="/chat" element={<ChatPage />} />
+          <Route path="/contacts" element={<ContactsPage />} />
+          <Route path="/scheduled-messages" element={<ScheduledMessagesPage />} />
+          <Route path="/broadcast" element={<BroadcastPage />} />
           <Route path="/relatorios" element={<RelatoriosPage />} />
           <Route path="/financeiro" element={<FinanceiroPage />} />
           <Route path="/ai-config" element={<AiConfigPage />} />

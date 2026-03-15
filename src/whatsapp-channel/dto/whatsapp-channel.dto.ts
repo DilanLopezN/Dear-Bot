@@ -4,9 +4,9 @@ export class CreateWhatsappChannelDto {
   @IsString()
   phoneNumber: string;
 
-  @IsEnum(['DIALOG360', 'EVOLUTION'])
+  @IsEnum(['DIALOG360', 'EVOLUTION', 'BAILEYS'])
   @IsOptional()
-  provider?: 'DIALOG360' | 'EVOLUTION';
+  provider?: 'DIALOG360' | 'EVOLUTION' | 'BAILEYS';
 
   // Dialog360 fields
   @IsString()
@@ -25,6 +25,11 @@ export class CreateWhatsappChannelDto {
   @IsString()
   @IsOptional()
   evolutionInstance?: string;
+
+  // Baileys fields
+  @IsString()
+  @IsOptional()
+  baileysSessionId?: string;
 
   @IsString()
   @IsOptional()
@@ -47,6 +52,10 @@ export class UpdateWhatsappChannelDto {
   @IsString()
   @IsOptional()
   evolutionInstance?: string;
+
+  @IsString()
+  @IsOptional()
+  baileysSessionId?: string;
 
   @IsString()
   @IsOptional()

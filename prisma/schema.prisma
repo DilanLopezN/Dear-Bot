@@ -40,6 +40,7 @@ enum AiProvider {
 enum ChannelProvider {
   DIALOG360
   EVOLUTION
+  BAILEYS
 }
 
 enum VariableType {
@@ -150,6 +151,8 @@ model WhatsappChannel {
   evolutionApiUrl    String?      // URL da instância Evolution (ex: https://api.evolution.com)
   evolutionApiKey    String?      // Global API Key da Evolution
   evolutionInstance  String?      // Nome da instância na Evolution
+  // Baileys fields
+  baileysSessionId   String?      // ID da sessão Baileys (para persistência)
   webhookSecret   String?
   isVerified      Boolean         @default(false)
   createdAt       DateTime        @default(now())

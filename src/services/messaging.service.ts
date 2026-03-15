@@ -1,13 +1,15 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Dialog360Service } from './dialog360.service';
 import { EvolutionService } from './evolution.service';
+import { BaileysService } from './baileys.service';
 
 export interface ChannelConfig {
-  provider: 'DIALOG360' | 'EVOLUTION';
+  provider: 'DIALOG360' | 'EVOLUTION' | 'BAILEYS';
   dialog360ApiKey?: string | null;
   evolutionApiUrl?: string | null;
   evolutionApiKey?: string | null;
   evolutionInstance?: string | null;
+  baileysSessionId?: string | null;
 }
 
 export interface SendResult {
@@ -21,9 +23,15 @@ export class MessagingService {
   constructor(
     private dialog360: Dialog360Service,
     private evolution: EvolutionService,
+    private baileys: BaileysService,
   ) {}
 
   async sendTextMessage(channel: ChannelConfig, to: string, text: string): Promise<SendResult> {
+    if (channel.provider === 'BAILEYS') {
+      const result = await this.baileys.sendTextMessage(channel.baileysSessionId!, to, text);
+      return { messageId: result?.key?.id || undefined };
+    }
+
     if (channel.provider === 'EVOLUTION') {
       const result = await this.evolution.sendTextMessage(
         channel.evolutionApiUrl!,
@@ -32,7 +40,7 @@ export class MessagingService {
         to,
         text,
       );
-      return { messageId: result?.key?.id };
+      return { messageId: result?.key?.id || undefined };
     }
 
     const result = await this.dialog360.sendTextMessage(channel.dialog360ApiKey!, to, text);
@@ -48,6 +56,23 @@ export class MessagingService {
     buttonText: string,
     sections: Array<{ title: string; rows: Array<{ id: string; title: string; description?: string }> }>,
   ): Promise<SendResult> {
+    if (channel.provider === 'BAILEYS') {
+      const baileysSections = sections.map((s) => ({
+        title: s.title,
+        rows: s.rows.map((r) => ({ title: r.title, description: r.description, rowId: r.id })),
+      }));
+      const result = await this.baileys.sendInteractiveListMessage(
+        channel.baileysSessionId!,
+        to,
+        header,
+        body,
+        footer,
+        buttonText,
+        baileysSections,
+      );
+      return { messageId: result?.key?.id || undefined };
+    }
+
     if (channel.provider === 'EVOLUTION') {
       const evoSections = sections.map((s) => ({
         title: s.title,
@@ -64,7 +89,7 @@ export class MessagingService {
         buttonText,
         evoSections,
       );
-      return { messageId: result?.key?.id };
+      return { messageId: result?.key?.id || undefined };
     }
 
     const result = await this.dialog360.sendInteractiveListMessage(
@@ -85,6 +110,20 @@ export class MessagingService {
     body: string,
     buttons: Array<{ id: string; title: string }>,
   ): Promise<SendResult> {
+    if (channel.provider === 'BAILEYS') {
+      const baileysButtons = buttons.map((b) => ({
+        buttonId: b.id,
+        buttonText: { displayText: b.title },
+      }));
+      const result = await this.baileys.sendInteractiveButtonMessage(
+        channel.baileysSessionId!,
+        to,
+        body,
+        baileysButtons,
+      );
+      return { messageId: result?.key?.id || undefined };
+    }
+
     if (channel.provider === 'EVOLUTION') {
       const evoButtons = buttons.map((b) => ({
         buttonId: b.id,
@@ -98,7 +137,7 @@ export class MessagingService {
         body,
         evoButtons,
       );
-      return { messageId: result?.key?.id };
+      return { messageId: result?.key?.id || undefined };
     }
 
     const result = await this.dialog360.sendInteractiveButtonMessage(
@@ -110,7 +149,13 @@ export class MessagingService {
     return { messageId: result?.messages?.[0]?.id };
   }
 
-  async markAsRead(channel: ChannelConfig, messageId: string): Promise<void> {
+  async markAsRead(channel: ChannelConfig, messageId: string, from?: string): Promise<void> {
+    if (channel.provider === 'BAILEYS') {
+      if (from) {
+        await this.baileys.markAsRead(channel.baileysSessionId!, from, messageId);
+      }
+      return;
+    }
     if (channel.provider === 'EVOLUTION') {
       // Evolution API marca como lido automaticamente ou não tem endpoint dedicado
       return;
@@ -126,6 +171,7 @@ export class MessagingService {
       evolutionApiUrl: ch.evolutionApiUrl,
       evolutionApiKey: ch.evolutionApiKey,
       evolutionInstance: ch.evolutionInstance,
+      baileysSessionId: ch.baileysSessionId,
     };
   }
 }

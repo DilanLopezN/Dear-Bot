@@ -741,6 +741,24 @@ export class WebhookService {
             }
             return;
           }
+
+          // Usar fallback configurado (que pode redirecionar para um menu via goto)
+          const flow = this.parseFlowConfig(bot.flowConfig);
+          if (flow.fallback?.message || flow.fallback?.goto) {
+            await this.executeFallback(bot, channel, from, conversation.id, 'Nenhuma keyword encontrada');
+            return;
+          }
+
+          // Se não há fallback configurado, tentar reenviar o menu inicial
+          if (flow.initialInteraction) {
+            try {
+              await this.executeGoto(bot.id, channel, from, conversation.id, flow.initialInteraction);
+              return;
+            } catch (error) {
+              this.logger.warn(`Falha ao reenviar menu inicial: ${error.message}`);
+            }
+          }
+
           responseText = 'Desculpe, não entendi. Tente reformular sua pergunta.';
           break;
         }
@@ -942,6 +960,23 @@ export class WebhookService {
               await this.executeGoto(botId, channel, from, conversation.id, match.goto);
             }
             return;
+          }
+
+          // Usar fallback configurado (pode redirecionar para menu via goto)
+          const flow = this.parseFlowConfig(bot.flowConfig);
+          if (flow.fallback?.message || flow.fallback?.goto) {
+            await this.executeFallback(bot, channel, from, conversation.id, 'Nenhuma keyword encontrada');
+            return;
+          }
+
+          // Se não há fallback, tentar reenviar o menu inicial
+          if (flow.initialInteraction) {
+            try {
+              await this.executeGoto(bot.id, channel, from, conversation.id, flow.initialInteraction);
+              return;
+            } catch (error) {
+              this.logger.warn(`Falha ao reenviar menu inicial: ${error.message}`);
+            }
           }
           break;
         }

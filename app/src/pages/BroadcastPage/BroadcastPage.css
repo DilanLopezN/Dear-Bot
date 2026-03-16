@@ -274,30 +274,4 @@
   padding-top: 10px;
 }
 
-/* ── Badges sending ── */
-.badge--sending { background: rgba(99, 102, 241, 0.1); color: #818cf8; }
-
-/* ── Extra buttons ── */
-.btn-success {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 14px;
-  border-radius: var(--radius-md);
-  font-size: 13px;
-  font-weight: 600;
-  background: rgba(34, 197, 94, 0.12);
-  color: #22c55e;
-  border: 1.5px solid rgba(34, 197, 94, 0.2);
-  cursor: pointer;
-  transition: background 0.15s;
-}
-
-.btn-success:hover { background: rgba(34, 197, 94, 0.2); }
-
-.btn-sm { padding: 5px 12px; font-size: 12px; }
-
-.icon-btn--warn {
-  color: #f59e0b;
-}
-.icon-btn--warn:hover { background: rgba(251, 191, 36, 0.1); }
+/* Badge/button utilities moved to global index.css */

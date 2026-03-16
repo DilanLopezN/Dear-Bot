@@ -7,7 +7,7 @@ import {
   Plus, Trash2, Pencil, Zap, Key, X, Power, PowerOff,
   MessageSquare, Bot as BotIcon, Phone, Loader2, Send,
   Play, ArrowLeft, Check, CheckCheck, List, Cpu,
-  GitBranch, ChevronRight, ArrowRight,
+  GitBranch, ChevronRight, ArrowRight, Database, RotateCcw, Copy,
 } from 'lucide-react';
 import './BotsPage.css';
 
@@ -1022,6 +1022,19 @@ interface EmulatorMessage {
   menuOptions?: MenuOption[];
 }
 
+interface EmulatorVariable {
+  value: string;
+  type: string;
+  capturedAt: string;
+}
+
+interface PendingCaptureState {
+  name: string;
+  type: CaptureVariable['type'];
+  promptMessage: string;
+  goto?: GotoTarget;
+}
+
 function WhatsAppEmulator({ open, onClose, bot }: { open: boolean; onClose: () => void; bot: Bot }) {
   const [messages, setMessages] = useState<EmulatorMessage[]>([]);
   const [input, setInput] = useState('');
@@ -1031,11 +1044,24 @@ function WhatsAppEmulator({ open, onClose, bot }: { open: boolean; onClose: () =
   const [initialized, setInitialized] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // ─── Contexto de Conversa ───
+  const [variables, setVariables] = useState<Record<string, EmulatorVariable>>({});
+  const [pendingCapture, setPendingCapture] = useState<PendingCaptureState | null>(null);
+  const [showContextPanel, setShowContextPanel] = useState(false);
+  const [flowStepIndex, setFlowStepIndex] = useState(0);
+
+  const resetConversation = () => {
+    setMessages([]);
+    setInput('');
+    setInitialized(false);
+    setVariables({});
+    setPendingCapture(null);
+    setFlowStepIndex(0);
+  };
+
   useEffect(() => {
     if (open) {
-      setMessages([]);
-      setInput('');
-      setInitialized(false);
+      resetConversation();
       Promise.all([api.getKeywords(bot.id), api.getMenus(bot.id)])
         .then(([kws, mns]) => { setKeywords(kws); setMenus(mns); })
         .catch(() => { setKeywords([]); setMenus([]); });
@@ -1045,6 +1071,51 @@ function WhatsAppEmulator({ open, onClose, bot }: { open: boolean; onClose: () =
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
   const now = () => { const d = new Date(); return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`; };
+
+  // ─── Validação de variáveis (espelha backend) ───
+  const validateVariableValue = (value: string, type: CaptureVariable['type']): { valid: boolean; parsed: string; error?: string } => {
+    switch (type) {
+      case 'STRING':
+        if (!value.trim()) return { valid: false, parsed: value, error: 'O valor não pode estar vazio. Por favor, envie um texto.' };
+        return { valid: true, parsed: value.trim() };
+      case 'NUMBER': {
+        const num = Number(value.replace(',', '.'));
+        if (isNaN(num)) return { valid: false, parsed: value, error: 'Valor inválido. Por favor, envie um número válido (ex: 42 ou 3.14).' };
+        return { valid: true, parsed: String(num) };
+      }
+      case 'BOOLEAN': {
+        const normalized = value.toLowerCase().trim();
+        const trueValues = ['sim', 'yes', 'true', 's', 'y', '1', 'verdadeiro'];
+        const falseValues = ['não', 'nao', 'no', 'false', 'n', '0', 'falso'];
+        if (trueValues.includes(normalized)) return { valid: true, parsed: 'true' };
+        if (falseValues.includes(normalized)) return { valid: true, parsed: 'false' };
+        return { valid: false, parsed: value, error: 'Valor inválido. Por favor, responda com Sim ou Não.' };
+      }
+      case 'DATE': {
+        const datePatterns = [
+          /^(\d{2})\/(\d{2})\/(\d{4})$/,
+          /^(\d{2})-(\d{2})-(\d{4})$/,
+          /^(\d{4})-(\d{2})-(\d{2})$/,
+        ];
+        for (let i = 0; i < datePatterns.length; i++) {
+          const match = value.trim().match(datePatterns[i]);
+          if (match) {
+            const dateStr = i === 2 ? `${match[1]}-${match[2]}-${match[3]}` : `${match[3]}-${match[2]}-${match[1]}`;
+            const date = new Date(dateStr);
+            if (!isNaN(date.getTime())) return { valid: true, parsed: dateStr };
+          }
+        }
+        return { valid: false, parsed: value, error: 'Data inválida. Por favor, envie no formato DD/MM/AAAA (ex: 25/12/2025).' };
+      }
+      default:
+        return { valid: true, parsed: value };
+    }
+  };
+
+  // ─── Interpolação de variáveis ───
+  const interpolateVars = (text: string): string => {
+    return text.replace(/\{\{(\w+)\}\}/g, (_, name) => variables[name]?.value ?? `{{${name}}}`);
+  };
 
   const findMenuByTrigger = (trigger: string): InteractiveMenu | null =>
     menus.find(m => m.isActive !== false && m.trigger.toLowerCase() === trigger.toLowerCase().trim()) || null;
@@ -1078,9 +1149,17 @@ function WhatsAppEmulator({ open, onClose, bot }: { open: boolean; onClose: () =
   };
 
   const addBotMessage = (text: string, isMenu?: boolean, menuOptions?: MenuOption[]) => {
-    const botMsg: EmulatorMessage = { id: (Date.now() + Math.random()).toString(), text, direction: 'incoming', time: now(), isMenu, menuOptions };
+    const botMsg: EmulatorMessage = { id: (Date.now() + Math.random()).toString(), text: interpolateVars(text), direction: 'incoming', time: now(), isMenu, menuOptions };
     setMessages((prev) => [...prev, botMsg]);
     return botMsg;
+  };
+
+  // ─── Iniciar captura de variável ───
+  const startCapture = (captureVar: CaptureVariable, goto?: GotoTarget) => {
+    setTimeout(() => {
+      addBotMessage(captureVar.promptMessage);
+      setPendingCapture({ ...captureVar, goto });
+    }, 400);
   };
 
   const executeGoto = (goto: GotoTarget, depth = 0) => {
@@ -1091,11 +1170,18 @@ function WhatsAppEmulator({ open, onClose, bot }: { open: boolean; onClose: () =
         if (menu) {
           const text = `📋 ${menu.title}\n${menu.body || ''}\n\n${(menu.options || []).map((o, i) => `${i + 1}. ${o.title}${o.description ? ' - ' + o.description : ''}`).join('\n')}${menu.footer ? '\n\n' + menu.footer : ''}`;
           addBotMessage(text, true, menu.options);
+          if (menu.captureVariable) startCapture(menu.captureVariable);
         } else { addBotMessage(`Menu "${goto.target}" não encontrado.`); }
       } else if (goto.type === 'KEYWORD') {
         const kw = findKeywordByTrigger(goto.target);
-        if (kw) { addBotMessage(kw.response); if (kw.goto) executeGoto(kw.goto, depth + 1); }
-        else { addBotMessage(`Keyword "${goto.target}" não encontrada.`); }
+        if (kw) {
+          addBotMessage(kw.response);
+          if (kw.captureVariable) {
+            startCapture(kw.captureVariable, kw.goto);
+          } else if (kw.goto) {
+            executeGoto(kw.goto, depth + 1);
+          }
+        } else { addBotMessage(`Keyword "${goto.target}" não encontrada.`); }
       }
     }, 400 + depth * 300);
   };
@@ -1116,13 +1202,35 @@ function WhatsAppEmulator({ open, onClose, bot }: { open: boolean; onClose: () =
     const delay = 800 + Math.random() * 1200;
     setTimeout(() => {
       setTyping(false);
+
+      // ─── Captura de variável pendente ───
+      if (pendingCapture) {
+        const { valid, parsed, error } = validateVariableValue(msgText, pendingCapture.type);
+        if (!valid) {
+          addBotMessage(error!);
+          return;
+        }
+        setVariables(prev => ({
+          ...prev,
+          [pendingCapture.name]: { value: parsed, type: pendingCapture.type, capturedAt: new Date().toISOString() },
+        }));
+        addBotMessage(`Valor registrado para *${pendingCapture.name}*: ${parsed}`);
+        const pendingGoto = pendingCapture.goto;
+        setPendingCapture(null);
+        if (pendingGoto) executeGoto(pendingGoto);
+        return;
+      }
+
       if (isFirst && bot.flowConfig?.initialInteraction) { executeGoto(bot.flowConfig.initialInteraction); return; }
+
       const menuMatch = findMenuMatch(msgText);
       if (menuMatch) {
         const text = `📋 ${menuMatch.title}\n${menuMatch.body || ''}\n\n${(menuMatch.options || []).map((o, i) => `${i + 1}. ${o.title}${o.description ? ' - ' + o.description : ''}`).join('\n')}${menuMatch.footer ? '\n\n' + menuMatch.footer : ''}`;
         addBotMessage(text, true, menuMatch.options);
+        if (menuMatch.captureVariable) startCapture(menuMatch.captureVariable);
         return;
       }
+
       for (const menu of menus) {
         const opt = (menu.options || []).find(o => o.title.toLowerCase() === msgText.toLowerCase() || o.id.toLowerCase() === msgText.toLowerCase());
         if (opt) {
@@ -1131,9 +1239,18 @@ function WhatsAppEmulator({ open, onClose, bot }: { open: boolean; onClose: () =
           return;
         }
       }
+
       if (bot.responseMode === 'KEYWORDS' || bot.responseMode === 'HYBRID') {
         const kwMatch = findKeywordMatch(msgText);
-        if (kwMatch) { addBotMessage(kwMatch.response); if (kwMatch.goto) executeGoto(kwMatch.goto); return; }
+        if (kwMatch) {
+          addBotMessage(kwMatch.response);
+          if (kwMatch.captureVariable) {
+            startCapture(kwMatch.captureVariable, kwMatch.goto);
+          } else if (kwMatch.goto) {
+            executeGoto(kwMatch.goto);
+          }
+          return;
+        }
         if (bot.responseMode === 'HYBRID') { addBotMessage(generateAIResponse(msgText)); return; }
         addBotMessage('Desculpe, não entendi. Tente reformular sua pergunta.');
         return;
@@ -1142,99 +1259,196 @@ function WhatsAppEmulator({ open, onClose, bot }: { open: boolean; onClose: () =
     }, delay);
   };
 
+  const varCount = Object.keys(variables).length;
+
+  const copyVariablesAsJson = () => {
+    navigator.clipboard.writeText(JSON.stringify(variables, null, 2));
+    toast.success('Variáveis copiadas para a área de transferência');
+  };
+
   if (!open) return null;
 
   return (
     <div className="wa-emulator" onClick={onClose}>
-      <div className="wa-emulator__phone" onClick={(e) => e.stopPropagation()}>
-        <div className="wa-emulator__header">
-          <button className="wa-emulator__back" onClick={onClose}><ArrowLeft size={20} /></button>
-          <div className="wa-emulator__avatar"><BotIcon size={20} color="#fff" /></div>
-          <div className="wa-emulator__contact">
-            <p className="wa-emulator__contact-name">{bot.name}</p>
-            <p className="wa-emulator__contact-status">{typing ? 'digitando...' : 'online'}</p>
-          </div>
-          <span className="wa-emulator__mode-badge">{bot.responseMode}</span>
-        </div>
-
-        <div className="wa-emulator__chat whatsapp-chat-bg">
-          {messages.length === 0 && (
-            <div className="wa-emulator__empty">
-              <div className="wa-emulator__empty-icon"><MessageSquare size={28} color="#8696a0" /></div>
-              <p className="wa-emulator__empty-title">Emulador WhatsApp</p>
-              <p className="wa-emulator__empty-text">
-                Envie uma mensagem para simular uma conversa com o bot <strong style={{ color: '#8696a0' }}>{bot.name}</strong>
-              </p>
-              {bot.flowConfig?.initialInteraction && (
-                <div className="wa-emulator__empty-tag" style={{ marginTop: 12, fontSize: 11 }}>
-                  Primeira interação: {bot.flowConfig.initialInteraction.type.toLowerCase()} → {bot.flowConfig.initialInteraction.target}
-                </div>
-              )}
-              <div className="wa-emulator__empty-tags">
-                {bot.responseMode !== 'AI' && (
-                  <span className="wa-emulator__empty-tag">{keywords.length} keyword{keywords.length !== 1 ? 's' : ''}</span>
-                )}
-                <span className="wa-emulator__empty-tag">{menus.length} menu{menus.length !== 1 ? 's' : ''}</span>
-              </div>
+      <div className={`wa-emulator__phone${showContextPanel ? ' wa-emulator__phone--with-panel' : ''}`} onClick={(e) => e.stopPropagation()}>
+        <div className="wa-emulator__phone-main">
+          <div className="wa-emulator__header">
+            <button className="wa-emulator__back" onClick={onClose}><ArrowLeft size={20} /></button>
+            <div className="wa-emulator__avatar"><BotIcon size={20} color="#fff" /></div>
+            <div className="wa-emulator__contact">
+              <p className="wa-emulator__contact-name">{bot.name}</p>
+              <p className="wa-emulator__contact-status">{typing ? 'digitando...' : 'online'}</p>
             </div>
-          )}
+            <span className="wa-emulator__mode-badge">{bot.responseMode}</span>
+            <button className="wa-emulator__header-btn" onClick={resetConversation} title="Resetar conversa">
+              <RotateCcw size={16} />
+            </button>
+            <button className="wa-emulator__header-btn" onClick={() => setShowContextPanel(prev => !prev)} title="Painel de contexto">
+              <Database size={16} />
+              {varCount > 0 && <span className="wa-emulator__var-badge">{varCount}</span>}
+            </button>
+          </div>
 
-          {messages.map((msg) => (
-            <div key={msg.id} className={`wa-emulator__message-row wa-emulator__message-row--${msg.direction === 'outgoing' ? 'out' : 'in'}`}>
-              <div className={`wa-emulator__bubble ${msg.direction === 'outgoing' ? 'whatsapp-bubble-outgoing' : 'whatsapp-bubble-incoming'}`} style={{ color: '#e9edef' }}>
-                <span className="wa-emulator__bubble-text">{msg.text}</span>
-                {msg.isMenu && msg.menuOptions && (
-                  <div className="wa-emulator__menu-options">
-                    {msg.menuOptions.map((opt) => (
-                      <button key={opt.id} className="wa-emulator__menu-btn" onClick={() => sendMessage(opt.title)}>
-                        {opt.title}
-                        {opt.goto && <span className="wa-emulator__menu-btn-arrow">→</span>}
-                      </button>
-                    ))}
+          <div className="wa-emulator__chat whatsapp-chat-bg">
+            {messages.length === 0 && (
+              <div className="wa-emulator__empty">
+                <div className="wa-emulator__empty-icon"><MessageSquare size={28} color="#8696a0" /></div>
+                <p className="wa-emulator__empty-title">Emulador WhatsApp</p>
+                <p className="wa-emulator__empty-text">
+                  Envie uma mensagem para simular uma conversa com o bot <strong style={{ color: '#8696a0' }}>{bot.name}</strong>
+                </p>
+                {bot.flowConfig?.initialInteraction && (
+                  <div className="wa-emulator__empty-tag" style={{ marginTop: 12, fontSize: 11 }}>
+                    Primeira interação: {bot.flowConfig.initialInteraction.type.toLowerCase()} → {bot.flowConfig.initialInteraction.target}
                   </div>
                 )}
-                <div className="wa-emulator__bubble-footer">
-                  <span className="wa-emulator__bubble-time">{msg.time}</span>
-                  {msg.direction === 'outgoing' && (
-                    msg.status === 'read'
-                      ? <CheckCheck size={13} color="#53bdeb" />
-                      : msg.status === 'delivered'
-                      ? <CheckCheck size={13} color="#8696a0" />
-                      : <Check size={13} color="#8696a0" />
+                <div className="wa-emulator__empty-tags">
+                  {bot.responseMode !== 'AI' && (
+                    <span className="wa-emulator__empty-tag">{keywords.length} keyword{keywords.length !== 1 ? 's' : ''}</span>
                   )}
+                  <span className="wa-emulator__empty-tag">{menus.length} menu{menus.length !== 1 ? 's' : ''}</span>
+                </div>
+              </div>
+            )}
+
+            {messages.map((msg) => (
+              <div key={msg.id} className={`wa-emulator__message-row wa-emulator__message-row--${msg.direction === 'outgoing' ? 'out' : 'in'}`}>
+                <div className={`wa-emulator__bubble ${msg.direction === 'outgoing' ? 'whatsapp-bubble-outgoing' : 'whatsapp-bubble-incoming'}`} style={{ color: '#e9edef' }}>
+                  <span className="wa-emulator__bubble-text">{msg.text}</span>
+                  {msg.isMenu && msg.menuOptions && (
+                    <div className="wa-emulator__menu-options">
+                      {msg.menuOptions.map((opt) => (
+                        <button key={opt.id} className="wa-emulator__menu-btn" onClick={() => sendMessage(opt.title)}>
+                          {opt.title}
+                          {opt.goto && <span className="wa-emulator__menu-btn-arrow">→</span>}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <div className="wa-emulator__bubble-footer">
+                    <span className="wa-emulator__bubble-time">{msg.time}</span>
+                    {msg.direction === 'outgoing' && (
+                      msg.status === 'read'
+                        ? <CheckCheck size={13} color="#53bdeb" />
+                        : msg.status === 'delivered'
+                        ? <CheckCheck size={13} color="#8696a0" />
+                        : <Check size={13} color="#8696a0" />
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            {typing && (
+              <div className="wa-emulator__typing">
+                <div className="whatsapp-bubble-incoming wa-emulator__typing-dots">
+                  <div className="wa-emulator__typing-dot animate-bounce" style={{ animationDelay: '0ms' }} />
+                  <div className="wa-emulator__typing-dot animate-bounce" style={{ animationDelay: '150ms' }} />
+                  <div className="wa-emulator__typing-dot animate-bounce" style={{ animationDelay: '300ms' }} />
+                </div>
+              </div>
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+
+          <div className="wa-emulator__input-row">
+            <input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
+              placeholder="Mensagem"
+              className="wa-emulator__input"
+            />
+            <button
+              onClick={() => sendMessage()}
+              disabled={!input.trim()}
+              className="wa-emulator__send"
+            >
+              <Send size={16} color="#fff" />
+            </button>
+          </div>
+        </div>
+
+        {/* ─── Painel de Contexto ─── */}
+        {showContextPanel && (
+          <div className="wa-emulator__context-panel">
+            <div className="wa-emulator__context-header">
+              <h3 className="wa-emulator__context-title">Contexto da Conversa</h3>
+              {varCount > 0 && (
+                <button className="wa-emulator__context-copy" onClick={copyVariablesAsJson} title="Copiar JSON">
+                  <Copy size={14} />
+                </button>
+              )}
+            </div>
+
+            {/* Estado da conversa */}
+            <div className="wa-emulator__context-section">
+              <h4 className="wa-emulator__context-section-title">Estado</h4>
+              <div className="wa-emulator__context-info">
+                <div className="wa-emulator__context-row">
+                  <span className="wa-emulator__context-label">Status</span>
+                  <span className="wa-emulator__context-value">BOT</span>
+                </div>
+                <div className="wa-emulator__context-row">
+                  <span className="wa-emulator__context-label">Modo</span>
+                  <span className="wa-emulator__context-value">{bot.responseMode}</span>
+                </div>
+                <div className="wa-emulator__context-row">
+                  <span className="wa-emulator__context-label">Mensagens</span>
+                  <span className="wa-emulator__context-value">{messages.length}</span>
+                </div>
+                <div className="wa-emulator__context-row">
+                  <span className="wa-emulator__context-label">Etapa fluxo</span>
+                  <span className="wa-emulator__context-value">{flowStepIndex}</span>
                 </div>
               </div>
             </div>
-          ))}
 
-          {typing && (
-            <div className="wa-emulator__typing">
-              <div className="whatsapp-bubble-incoming wa-emulator__typing-dots">
-                <div className="wa-emulator__typing-dot animate-bounce" style={{ animationDelay: '0ms' }} />
-                <div className="wa-emulator__typing-dot animate-bounce" style={{ animationDelay: '150ms' }} />
-                <div className="wa-emulator__typing-dot animate-bounce" style={{ animationDelay: '300ms' }} />
+            {/* Captura pendente */}
+            {pendingCapture && (
+              <div className="wa-emulator__context-section">
+                <h4 className="wa-emulator__context-section-title">Captura Pendente</h4>
+                <div className="wa-emulator__context-pending">
+                  <div className="wa-emulator__context-row">
+                    <span className="wa-emulator__context-label">Variável</span>
+                    <span className="wa-emulator__context-value wa-emulator__context-value--highlight">{pendingCapture.name}</span>
+                  </div>
+                  <div className="wa-emulator__context-row">
+                    <span className="wa-emulator__context-label">Tipo</span>
+                    <span className="wa-emulator__context-value">{pendingCapture.type}</span>
+                  </div>
+                  <div className="wa-emulator__context-row">
+                    <span className="wa-emulator__context-label">Prompt</span>
+                    <span className="wa-emulator__context-value wa-emulator__context-value--small">{pendingCapture.promptMessage}</span>
+                  </div>
+                </div>
               </div>
-            </div>
-          )}
-          <div ref={messagesEndRef} />
-        </div>
+            )}
 
-        <div className="wa-emulator__input-row">
-          <input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
-            placeholder="Mensagem"
-            className="wa-emulator__input"
-          />
-          <button
-            onClick={() => sendMessage()}
-            disabled={!input.trim()}
-            className="wa-emulator__send"
-          >
-            <Send size={16} color="#fff" />
-          </button>
-        </div>
+            {/* Variáveis capturadas */}
+            <div className="wa-emulator__context-section">
+              <h4 className="wa-emulator__context-section-title">
+                Variáveis Capturadas
+                {varCount > 0 && <span className="wa-emulator__context-count">{varCount}</span>}
+              </h4>
+              {varCount === 0 ? (
+                <p className="wa-emulator__context-empty">Nenhuma variável capturada ainda.</p>
+              ) : (
+                <div className="wa-emulator__context-vars">
+                  {Object.entries(variables).map(([name, v]) => (
+                    <div key={name} className="wa-emulator__context-var">
+                      <div className="wa-emulator__context-var-header">
+                        <span className="wa-emulator__context-var-name">{name}</span>
+                        <span className="wa-emulator__context-var-type">{v.type}</span>
+                      </div>
+                      <span className="wa-emulator__context-var-value">{v.value}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

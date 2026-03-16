@@ -8,6 +8,8 @@ import { OpenAIService } from '../services/openai.service';
 import { GeminiService } from '../services/gemini.service';
 import { MessagingService, ChannelConfig } from '../services/messaging.service';
 import { ContactService } from '../contact/contact.service';
+import { ContextCacheService } from './context-cache.service';
+import { ConversationContext, serializeContextForAI } from './conversation-context';
 import { Prisma, VariableType } from '@prisma/client';
 
 type MessageStatus = 'SENT' | 'DELIVERED' | 'READ' | 'FAILED';
@@ -46,7 +48,59 @@ export class WebhookService {
     private geminiService: GeminiService,
     private messaging: MessagingService,
     private contactService: ContactService,
+    private contextCache: ContextCacheService,
   ) {}
+
+  /** Constrói ou recupera do cache o contexto da conversa */
+  private async getOrBuildContext(conversation: any): Promise<ConversationContext> {
+    const cached = this.contextCache.get(conversation.id);
+    if (cached) {
+      cached.lastMessageAt = new Date();
+      cached.messageCount++;
+      cached.status = conversation.status;
+      cached.waitingForVariable = conversation.waitingForVariable;
+      cached.pendingVariableName = conversation.pendingVariableName;
+      cached.pendingVariableType = conversation.pendingVariableType;
+      return cached;
+    }
+
+    const variables = await this.prisma.conversationVariable.findMany({
+      where: { conversationId: conversation.id },
+    });
+
+    const messageCount = await this.prisma.message.count({
+      where: { conversationId: conversation.id },
+    });
+
+    const variablesMap: Record<string, any> = {};
+    for (const v of variables) {
+      variablesMap[v.name] = {
+        name: v.name,
+        type: v.type,
+        value: v.value,
+        capturedAt: v.createdAt,
+      };
+    }
+
+    const context: ConversationContext = {
+      conversationId: conversation.id,
+      botId: conversation.botId,
+      contactPhone: conversation.contactPhone,
+      contactName: conversation.contactName,
+      status: conversation.status,
+      flowStepIndex: conversation.flowStepIndex || 0,
+      waitingForVariable: conversation.waitingForVariable || false,
+      pendingVariableName: conversation.pendingVariableName,
+      pendingVariableType: conversation.pendingVariableType,
+      variables: variablesMap,
+      createdAt: conversation.createdAt,
+      lastMessageAt: new Date(),
+      messageCount,
+    };
+
+    this.contextCache.set(conversation.id, context);
+    return context;
+  }
 
   private parseFlowConfig(raw: unknown): FlowConfig {
     if (!raw || typeof raw !== 'object') return {};
@@ -117,10 +171,17 @@ export class WebhookService {
   }
 
   /** Substitui variáveis no texto: {{nome_variavel}} → valor */
-  private async interpolateVariables(text: string, conversationId: string): Promise<string> {
+  private async interpolateVariables(text: string, conversationId: string, context?: ConversationContext): Promise<string> {
     const variablePattern = /\{\{(\w+)\}\}/g;
     const matches = text.match(variablePattern);
     if (!matches) return text;
+
+    // Se temos contexto em cache, usar diretamente sem consultar o DB
+    if (context) {
+      return text.replace(variablePattern, (_, name) => {
+        return context.variables[name]?.value ?? `{{${name}}}`;
+      });
+    }
 
     const variableNames = matches.map(m => m.replace(/\{\{|\}\}/g, ''));
     const variables = await this.prisma.conversationVariable.findMany({
@@ -144,6 +205,15 @@ export class WebhookService {
       update: { value, type },
       create: { conversationId, name, type, value },
     });
+
+    // Atualizar cache de contexto
+    this.contextCache.updateVariable(conversationId, name, {
+      name,
+      type,
+      value,
+      capturedAt: new Date(),
+    });
+
     this.logger.log(`Variável '${name}' (${type}) = '${value}' salva na conversa ${conversationId}`);
   }
 
@@ -174,6 +244,12 @@ export class WebhookService {
         pendingVariableType: null,
         pendingVariableGoto: Prisma.JsonNull,
       },
+    });
+
+    this.contextCache.updateContext(conversationId, {
+      waitingForVariable: false,
+      pendingVariableName: null,
+      pendingVariableType: null,
     });
   }
 
@@ -257,12 +333,19 @@ export class WebhookService {
     await this.setWaitingForVariable(conversationId, variableConfig, goto);
   }
 
-  /** Gera resposta via IA usando o provedor configurado no bot */
+  /** Gera resposta via IA usando o provedor configurado no bot, enriquecida com contexto da conversa */
   private async generateAIResponse(
     bot: any,
     conversationId: string,
     text: string,
+    context?: ConversationContext,
   ): Promise<string> {
+    // Enriquecer o systemPrompt com o contexto da conversa
+    const basePrompt = bot.systemPrompt || 'Você é um assistente de atendimento ao cliente. Responda de forma educada, objetiva e útil. Responda no idioma do cliente.';
+    const enrichedPrompt = context
+      ? `${basePrompt}\n\n${serializeContextForAI(context)}`
+      : basePrompt;
+
     const aiConfig = bot.aiConfig;
 
     if (aiConfig) {
@@ -271,7 +354,7 @@ export class WebhookService {
           return this.openaiService.generateResponse(
             conversationId,
             text,
-            bot.systemPrompt || undefined,
+            enrichedPrompt,
             aiConfig.apiKey,
             aiConfig.model,
             aiConfig.maxTokens,
@@ -281,7 +364,7 @@ export class WebhookService {
           return this.geminiService.generateResponse(
             conversationId,
             text,
-            bot.systemPrompt || undefined,
+            enrichedPrompt,
             aiConfig.apiKey,
             aiConfig.model,
             aiConfig.maxTokens,
@@ -292,7 +375,7 @@ export class WebhookService {
           return this.claudeService.generateResponse(
             conversationId,
             text,
-            bot.systemPrompt || undefined,
+            enrichedPrompt,
           );
       }
     }
@@ -300,7 +383,7 @@ export class WebhookService {
     return this.claudeService.generateResponse(
       conversationId,
       text,
-      bot.systemPrompt || undefined,
+      enrichedPrompt,
     );
   }
 
@@ -542,10 +625,10 @@ export class WebhookService {
         this.logger.warn(`Falha ao salvar contato ${from}: ${err.message}`),
       );
 
-      const conversationMessagesCount = await this.prisma.message.count({
-        where: { conversationId: conversation.id },
-      });
-      const isFirstInteraction = conversationMessagesCount === 0;
+      // Construir contexto da conversa (cache ou DB)
+      const context = await this.getOrBuildContext(conversation);
+
+      const isFirstInteraction = context.messageCount === 0;
 
       await this.conversationService.saveMessage(
         conversation.id,
@@ -630,7 +713,7 @@ export class WebhookService {
         case 'KEYWORDS': {
           const match = await this.keywordService.findMatch(botId, text);
           if (match) {
-            responseText = await this.interpolateVariables(match.response, conversation.id);
+            responseText = await this.interpolateVariables(match.response, conversation.id, context);
             const result = await this.messaging.sendTextMessage(channel, from, responseText);
             await this.conversationService.saveMessage(
               conversation.id,
@@ -656,13 +739,13 @@ export class WebhookService {
         }
 
         case 'AI':
-          responseText = await this.generateAIResponse(bot, conversation.id, text);
+          responseText = await this.generateAIResponse(bot, conversation.id, text, context);
           break;
 
         case 'HYBRID': {
           const match = await this.keywordService.findMatch(botId, text);
           if (match) {
-            responseText = await this.interpolateVariables(match.response, conversation.id);
+            responseText = await this.interpolateVariables(match.response, conversation.id, context);
             const result = await this.messaging.sendTextMessage(channel, from, responseText);
             await this.conversationService.saveMessage(
               conversation.id,
@@ -681,13 +764,13 @@ export class WebhookService {
             }
             return;
           }
-          responseText = await this.generateAIResponse(bot, conversation.id, text);
+          responseText = await this.generateAIResponse(bot, conversation.id, text, context);
           break;
         }
       }
 
       if (responseText) {
-        const interpolated = await this.interpolateVariables(responseText, conversation.id);
+        const interpolated = await this.interpolateVariables(responseText, conversation.id, context);
         const result = await this.messaging.sendTextMessage(channel, from, interpolated);
 
         await this.conversationService.saveMessage(

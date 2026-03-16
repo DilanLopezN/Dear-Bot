@@ -127,7 +127,6 @@ export class ChatManagementService {
       where: { id: conversationId },
       include: {
         bot: {
-          select: { userId: true, id: true },
           include: { whatsappChannel: true },
         },
       },

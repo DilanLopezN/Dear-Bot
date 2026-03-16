@@ -115,6 +115,56 @@ export interface ChatMessage {
   createdAt: string;
 }
 
+export interface Lead {
+  id: string;
+  botId: string;
+  contactId: string;
+  score: number;
+  status: 'NEW' | 'CONTACTED' | 'QUALIFIED' | 'NEGOTIATION' | 'CONVERTED' | 'LOST';
+  temperature: 'COLD' | 'WARM' | 'HOT';
+  source?: string;
+  totalMessages: number;
+  inboundMessages: number;
+  outboundMessages: number;
+  totalConversations: number;
+  lastInteractionAt?: string;
+  firstInteractionAt?: string;
+  responseRate: number;
+  avgResponseTime: number;
+  humanTakeovers: number;
+  estimatedValue?: number;
+  notes?: string;
+  convertedAt?: string;
+  lostReason?: string;
+  createdAt: string;
+  updatedAt: string;
+  contact?: {
+    id: string;
+    phone: string;
+    name?: string;
+    email?: string;
+    tags: string[];
+  };
+  history?: LeadHistoryEntry[];
+}
+
+export interface LeadHistoryEntry {
+  id: string;
+  action: string;
+  details?: string;
+  createdAt: string;
+}
+
+export interface LeadStats {
+  total: number;
+  hot: number;
+  warm: number;
+  cold: number;
+  byStatus: Record<string, number>;
+  conversionRate: number;
+  avgScore: number;
+}
+
 /** Extrai a mensagem de erro de uma resposta axios de forma legível */
 export function extractApiError(err: unknown): string {
   if (err instanceof AxiosError) {
@@ -497,6 +547,54 @@ class ApiService {
 
   async deleteBroadcast(botId: string, id: string) {
     const { data } = await this.client.delete(`/bots/${botId}/broadcasts/${id}`);
+    return data;
+  }
+
+  // ── Leads ────────────────────────────────────────────────────────────────
+
+  async getLeads(botId: string, filters?: { search?: string; status?: string; temperature?: string; sortBy?: string }): Promise<Lead[]> {
+    const params = new URLSearchParams();
+    if (filters?.search) params.set('search', filters.search);
+    if (filters?.status) params.set('status', filters.status);
+    if (filters?.temperature) params.set('temperature', filters.temperature);
+    if (filters?.sortBy) params.set('sortBy', filters.sortBy);
+    const query = params.toString();
+    const { data } = await this.client.get(`/bots/${botId}/leads${query ? `?${query}` : ''}`);
+    return data;
+  }
+
+  async getLeadStats(botId: string): Promise<LeadStats> {
+    const { data } = await this.client.get(`/bots/${botId}/leads/stats`);
+    return data;
+  }
+
+  async getLead(botId: string, id: string): Promise<Lead> {
+    const { data } = await this.client.get(`/bots/${botId}/leads/${id}`);
+    return data;
+  }
+
+  async createLead(botId: string, payload: { contactId: string; source?: string; estimatedValue?: number; notes?: string }) {
+    const { data } = await this.client.post(`/bots/${botId}/leads`, payload);
+    return data;
+  }
+
+  async updateLead(botId: string, id: string, payload: Record<string, unknown>) {
+    const { data } = await this.client.put(`/bots/${botId}/leads/${id}`, payload);
+    return data;
+  }
+
+  async deleteLead(botId: string, id: string) {
+    const { data } = await this.client.delete(`/bots/${botId}/leads/${id}`);
+    return data;
+  }
+
+  async syncLeads(botId: string) {
+    const { data } = await this.client.post(`/bots/${botId}/leads/sync`);
+    return data;
+  }
+
+  async recalculateLead(botId: string, id: string) {
+    const { data } = await this.client.post(`/bots/${botId}/leads/${id}/recalculate`);
     return data;
   }
 }

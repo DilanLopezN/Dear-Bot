@@ -8,6 +8,7 @@ import { OpenAIService } from '../services/openai.service';
 import { GeminiService } from '../services/gemini.service';
 import { MessagingService, ChannelConfig } from '../services/messaging.service';
 import { ContactService } from '../contact/contact.service';
+import { LeadService } from '../lead/lead.service';
 import { ContextCacheService } from './context-cache.service';
 import { ConversationContext, serializeContextForAI } from './conversation-context';
 import { Prisma, VariableType } from '@prisma/client';
@@ -48,6 +49,7 @@ export class WebhookService {
     private geminiService: GeminiService,
     private messaging: MessagingService,
     private contactService: ContactService,
+    private leadService: LeadService,
     private contextCache: ContextCacheService,
   ) {}
 
@@ -625,6 +627,11 @@ export class WebhookService {
         this.logger.warn(`Falha ao salvar contato ${from}: ${err.message}`),
       );
 
+      // Atualiza métricas do lead
+      this.leadService.updateMetricsFromMessage(botId, from).catch((err) =>
+        this.logger.warn(`Falha ao atualizar métricas do lead ${from}: ${err.message}`),
+      );
+
       // Construir contexto da conversa (cache ou DB)
       const context = await this.getOrBuildContext(conversation);
 
@@ -810,6 +817,11 @@ export class WebhookService {
       // Salva/atualiza contato automaticamente
       this.contactService.upsertFromConversation(botId, from, contactName).catch((err) =>
         this.logger.warn(`Falha ao salvar contato ${from}: ${err.message}`),
+      );
+
+      // Atualiza métricas do lead
+      this.leadService.updateMetricsFromMessage(botId, from).catch((err) =>
+        this.logger.warn(`Falha ao atualizar métricas do lead ${from}: ${err.message}`),
       );
 
       // Verificar se é primeira interação (antes de salvar a mensagem)

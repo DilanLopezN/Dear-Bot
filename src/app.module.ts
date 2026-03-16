@@ -15,6 +15,7 @@ import { ChatManagementModule } from './chat-management/chat-management.module';
 import { ContactModule } from './contact/contact.module';
 import { ScheduledMessageModule } from './scheduled-message/scheduled-message.module';
 import { BroadcastModule } from './broadcast/broadcast.module';
+import { LeadModule } from './lead/lead.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { BroadcastModule } from './broadcast/broadcast.module';
     ContactModule,
     ScheduledMessageModule,
     BroadcastModule,
+    LeadModule,
   ],
 })
 export class AppModule {}

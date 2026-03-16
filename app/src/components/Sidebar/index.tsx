@@ -15,6 +15,7 @@ import {
   Users,
   CalendarClock,
   Megaphone,
+  Target,
 } from 'lucide-react';
 import './Sidebar.css';
 
@@ -23,6 +24,7 @@ const navItems = [
   { to: '/bots', icon: Bot, label: 'Bots' },
   { to: '/chat', icon: Headset, label: 'Chat' },
   { to: '/contacts', icon: Users, label: 'Contatos' },
+  { to: '/leads', icon: Target, label: 'Leads' },
   { to: '/scheduled-messages', icon: CalendarClock, label: 'Agendamentos' },
   { to: '/broadcast', icon: Megaphone, label: 'Transmissão' },
   { to: '/ai-config', icon: Cpu, label: 'Configuração I.A.' },

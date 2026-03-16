@@ -13,6 +13,7 @@ import ChatPage from '@/pages/ChatPage';
 import ContactsPage from '@/pages/ContactsPage';
 import ScheduledMessagesPage from '@/pages/ScheduledMessagesPage';
 import BroadcastPage from '@/pages/BroadcastPage';
+import LeadsPage from '@/pages/LeadsPage';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuthStore();
@@ -46,6 +47,7 @@ export default function App() {
           <Route path="/bots" element={<BotsPage />} />
           <Route path="/chat" element={<ChatPage />} />
           <Route path="/contacts" element={<ContactsPage />} />
+          <Route path="/leads" element={<LeadsPage />} />
           <Route path="/scheduled-messages" element={<ScheduledMessagesPage />} />
           <Route path="/broadcast" element={<BroadcastPage />} />
           <Route path="/relatorios" element={<RelatoriosPage />} />

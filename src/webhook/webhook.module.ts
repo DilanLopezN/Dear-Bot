@@ -6,10 +6,11 @@ import { KeywordModule } from '../keyword/keyword.module';
 import { ServicesModule } from '../services/services.module';
 import { MenuModule } from '../menu/menu.module';
 import { ContactModule } from '../contact/contact.module';
+import { LeadModule } from '../lead/lead.module';
 import { ContextCacheService } from './context-cache.service';
 
 @Module({
-  imports: [ConversationModule, KeywordModule, ServicesModule, MenuModule, ContactModule],
+  imports: [ConversationModule, KeywordModule, ServicesModule, MenuModule, ContactModule, LeadModule],
   controllers: [WebhookController],
   providers: [WebhookService, ContextCacheService],
 })

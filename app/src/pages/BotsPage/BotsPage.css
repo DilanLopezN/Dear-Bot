@@ -753,3 +753,70 @@
   display: flex;
   justify-content: flex-end;
 }
+
+/* ── Variable Capture Toggle ── */
+.capture-section {
+  margin-top: 6px;
+}
+
+.capture-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  background: var(--color-bg-tertiary);
+  border: 1.5px solid var(--color-border);
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.capture-toggle:hover {
+  border-color: var(--color-border-light);
+}
+
+.capture-toggle__checkbox {
+  width: 16px;
+  height: 16px;
+  accent-color: #f59e0b;
+}
+
+.capture-toggle__label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+.capture-fields {
+  margin-top: 10px;
+  padding: 14px;
+  border-radius: var(--radius-md);
+  background: var(--color-bg-tertiary);
+  border: 1.5px solid rgba(245, 158, 11, 0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ── Flow Tree Clickable ── */
+.flow-tree__label--clickable {
+  cursor: pointer;
+  transition: filter 0.15s, transform 0.15s;
+}
+
+.flow-tree__label--clickable:hover {
+  filter: brightness(1.2);
+  transform: translateX(2px);
+}
+
+.flow-tree__capture-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.1);
+  padding: 1px 6px;
+  border-radius: 8px;
+  margin-left: 6px;
+}

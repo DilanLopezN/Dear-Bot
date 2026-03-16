@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { useBotStore, type Bot } from '@/stores/bot.store';
-import { api, extractApiError, type InteractiveMenu, type MenuOption, type FlowConfig, type GotoTarget, type Keyword } from '@/services/api';
+import { api, extractApiError, type InteractiveMenu, type MenuOption, type FlowConfig, type GotoTarget, type Keyword, type CaptureVariable } from '@/services/api';
 import { toast } from 'sonner';
 import {
   Plus, Trash2, Pencil, Zap, Key, X, Power, PowerOff,
@@ -228,6 +228,10 @@ function KeywordsModal({ open, onClose, bot }: { open: boolean; onClose: () => v
   const { register, handleSubmit, reset } = useForm({ defaultValues: { trigger: '', response: '', priority: 0 } });
   const [gotoType, setGotoType] = useState<GotoTarget['type'] | ''>('');
   const [gotoTarget, setGotoTarget] = useState('');
+  const [captureEnabled, setCaptureEnabled] = useState(false);
+  const [captureName, setCaptureName] = useState('');
+  const [captureType, setCaptureType] = useState<CaptureVariable['type']>('STRING');
+  const [capturePrompt, setCapturePrompt] = useState('');
 
   const load = async () => {
     setLoading(true);
@@ -241,12 +245,19 @@ function KeywordsModal({ open, onClose, bot }: { open: boolean; onClose: () => v
 
   const onAdd = async (data: any) => {
     const goto = gotoType && gotoTarget ? { type: gotoType, target: gotoTarget } : undefined;
+    const captureVariable = captureEnabled && captureName.trim()
+      ? { name: captureName.trim(), type: captureType, promptMessage: capturePrompt.trim() }
+      : undefined;
     try {
-      await api.createKeyword(bot.id, { ...data, priority: Number(data.priority) || 0, goto });
+      await api.createKeyword(bot.id, { ...data, priority: Number(data.priority) || 0, goto, captureVariable });
       toast.success('Keyword adicionada!');
       reset();
       setGotoType('');
       setGotoTarget('');
+      setCaptureEnabled(false);
+      setCaptureName('');
+      setCaptureType('STRING');
+      setCapturePrompt('');
       load();
     } catch (err) {
       toast.error(`Erro ao adicionar keyword: ${extractApiError(err)}`);
@@ -274,6 +285,35 @@ function KeywordsModal({ open, onClose, bot }: { open: boolean; onClose: () => v
           <input {...register('response', { required: true })} placeholder="Resposta do bot" className="form-input" style={{ flex: 1 }} />
         </div>
         <GotoSelector gotoType={gotoType} gotoTarget={gotoTarget} onTypeChange={setGotoType} onTargetChange={setGotoTarget} keywords={keywords} menus={menus} label="Goto (navegação após resposta)" />
+
+        <div className="capture-section">
+          <label className="capture-toggle">
+            <input type="checkbox" className="capture-toggle__checkbox" checked={captureEnabled} onChange={(e) => setCaptureEnabled(e.target.checked)} />
+            <Zap size={14} color="#f59e0b" />
+            <span className="capture-toggle__label">Capturar variável</span>
+          </label>
+          {captureEnabled && (
+            <div className="capture-fields">
+              <div className="form-row">
+                <FormField label="Nome da variável">
+                  <input className="form-input" placeholder="Ex: cpf, email, nome" value={captureName} onChange={(e) => setCaptureName(e.target.value)} />
+                </FormField>
+                <FormField label="Tipo">
+                  <select className="form-input" value={captureType} onChange={(e) => setCaptureType(e.target.value as CaptureVariable['type'])}>
+                    <option value="STRING">Texto (STRING)</option>
+                    <option value="NUMBER">Número (NUMBER)</option>
+                    <option value="BOOLEAN">Sim/Não (BOOLEAN)</option>
+                    <option value="DATE">Data (DATE)</option>
+                  </select>
+                </FormField>
+              </div>
+              <FormField label="Mensagem de prompt">
+                <input className="form-input" placeholder="Ex: Por favor, digite seu CPF" value={capturePrompt} onChange={(e) => setCapturePrompt(e.target.value)} />
+              </FormField>
+            </div>
+          )}
+        </div>
+
         <div className="keyword-form__submit">
           <button type="submit" className="btn btn-primary">
             <Plus size={15} /> Adicionar
@@ -297,6 +337,11 @@ function KeywordsModal({ open, onClose, bot }: { open: boolean; onClose: () => v
               {kw.goto && (
                 <div className="keyword-row__goto">
                   <ArrowRight size={11} /> goto {kw.goto.type.toLowerCase()}: {kw.goto.target}
+                </div>
+              )}
+              {kw.captureVariable && (
+                <div className="keyword-row__goto" style={{ color: '#f59e0b' }}>
+                  <Zap size={11} /> captura: {kw.captureVariable.name} ({kw.captureVariable.type})
                 </div>
               )}
             </div>
@@ -323,6 +368,10 @@ function MenusModal({ open, onClose, bot }: { open: boolean; onClose: () => void
   const [optDesc, setOptDesc] = useState('');
   const [optGotoType, setOptGotoType] = useState<GotoTarget['type'] | ''>('');
   const [optGotoTarget, setOptGotoTarget] = useState('');
+  const [menuCaptureEnabled, setMenuCaptureEnabled] = useState(false);
+  const [menuCaptureName, setMenuCaptureName] = useState('');
+  const [menuCaptureType, setMenuCaptureType] = useState<CaptureVariable['type']>('STRING');
+  const [menuCapturePrompt, setMenuCapturePrompt] = useState('');
 
   const resetFormState = () => {
     reset({ trigger: '', title: '', body: '', footer: '' });
@@ -332,6 +381,10 @@ function MenusModal({ open, onClose, bot }: { open: boolean; onClose: () => void
     setOptGotoType('');
     setOptGotoTarget('');
     setEditingMenuId(null);
+    setMenuCaptureEnabled(false);
+    setMenuCaptureName('');
+    setMenuCaptureType('STRING');
+    setMenuCapturePrompt('');
   };
 
   const load = async () => {
@@ -358,7 +411,10 @@ function MenusModal({ open, onClose, bot }: { open: boolean; onClose: () => void
 
   const onSubmitMenu = async (data: any) => {
     if (options.length === 0) return;
-    const payload = { trigger: data.trigger, title: data.title, body: data.body || undefined, footer: data.footer || undefined, options };
+    const captureVariable = menuCaptureEnabled && menuCaptureName.trim()
+      ? { name: menuCaptureName.trim(), type: menuCaptureType, promptMessage: menuCapturePrompt.trim() }
+      : undefined;
+    const payload = { trigger: data.trigger, title: data.title, body: data.body || undefined, footer: data.footer || undefined, options, captureVariable };
     try {
       if (editingMenuId) {
         await api.updateMenu(bot.id, editingMenuId, payload);
@@ -380,6 +436,17 @@ function MenusModal({ open, onClose, bot }: { open: boolean; onClose: () => void
     setEditingMenuId(menu.id);
     reset({ trigger: menu.trigger, title: menu.title, body: menu.body || '', footer: menu.footer || '' });
     setOptions(menu.options || []);
+    if (menu.captureVariable) {
+      setMenuCaptureEnabled(true);
+      setMenuCaptureName(menu.captureVariable.name);
+      setMenuCaptureType(menu.captureVariable.type);
+      setMenuCapturePrompt(menu.captureVariable.promptMessage);
+    } else {
+      setMenuCaptureEnabled(false);
+      setMenuCaptureName('');
+      setMenuCaptureType('STRING');
+      setMenuCapturePrompt('');
+    }
   };
 
   const onDeleteMenu = async (menuId: string) => {
@@ -443,6 +510,34 @@ function MenusModal({ open, onClose, bot }: { open: boolean; onClose: () => void
             </div>
           </div>
 
+          <div className="capture-section">
+            <label className="capture-toggle">
+              <input type="checkbox" className="capture-toggle__checkbox" checked={menuCaptureEnabled} onChange={(e) => setMenuCaptureEnabled(e.target.checked)} />
+              <Zap size={14} color="#f59e0b" />
+              <span className="capture-toggle__label">Capturar variável após exibir menu</span>
+            </label>
+            {menuCaptureEnabled && (
+              <div className="capture-fields">
+                <div className="form-row">
+                  <FormField label="Nome da variável">
+                    <input className="form-input" placeholder="Ex: cpf, email, nome" value={menuCaptureName} onChange={(e) => setMenuCaptureName(e.target.value)} />
+                  </FormField>
+                  <FormField label="Tipo">
+                    <select className="form-input" value={menuCaptureType} onChange={(e) => setMenuCaptureType(e.target.value as CaptureVariable['type'])}>
+                      <option value="STRING">Texto (STRING)</option>
+                      <option value="NUMBER">Número (NUMBER)</option>
+                      <option value="BOOLEAN">Sim/Não (BOOLEAN)</option>
+                      <option value="DATE">Data (DATE)</option>
+                    </select>
+                  </FormField>
+                </div>
+                <FormField label="Mensagem de prompt">
+                  <input className="form-input" placeholder="Ex: Por favor, digite seu CPF" value={menuCapturePrompt} onChange={(e) => setMenuCapturePrompt(e.target.value)} />
+                </FormField>
+              </div>
+            )}
+          </div>
+
           <div className="modal__footer">
             <button type="button" onClick={() => { setShowAdd(false); resetFormState(); }} className="btn btn-secondary">Cancelar</button>
             <button type="submit" disabled={options.length === 0} className="btn btn-primary">
@@ -488,6 +583,11 @@ function MenusModal({ open, onClose, bot }: { open: boolean; onClose: () => void
                     </div>
                   ))}
                 </div>
+                {menu.captureVariable && (
+                  <div style={{ marginTop: 6, fontSize: 12, color: '#f59e0b', display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <Zap size={11} /> Captura: {menu.captureVariable.name} ({menu.captureVariable.type})
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -709,6 +809,8 @@ interface TreeNode {
   type: 'initial' | 'keyword' | 'menu' | 'option' | 'fallback';
   children: TreeNode[];
   gotoLabel?: string;
+  entityId?: string;
+  captureInfo?: string;
 }
 
 function buildFlowTree(bot: Bot, keywords: Keyword[], menus: InteractiveMenu[]): TreeNode {
@@ -726,8 +828,10 @@ function buildFlowTree(bot: Bot, keywords: Keyword[], menus: InteractiveMenu[]):
       if (!menu) return { id: `menu_missing_${goto.target}_d${depth}`, label: `Menu: ${goto.target} (não encontrado)`, type: 'menu', children: [] };
       return {
         id: `menu_${menu.id}_d${depth}`, label: `Menu: ${menu.title}`, type: 'menu',
+        entityId: menu.id,
+        captureInfo: menu.captureVariable ? `${menu.captureVariable.name} (${menu.captureVariable.type})` : undefined,
         children: (menu.options || []).map((opt, i) => {
-          const optNode: TreeNode = { id: `opt_${opt.id}_d${depth}_i${i}`, label: opt.title, type: 'option', children: [], gotoLabel: opt.goto ? `→ ${opt.goto.type.toLowerCase()}: ${opt.goto.target}` : undefined };
+          const optNode: TreeNode = { id: `opt_${opt.id}_d${depth}_i${i}`, label: opt.title, type: 'option', children: [], gotoLabel: opt.goto ? `→ ${opt.goto.type.toLowerCase()}: ${opt.goto.target}` : undefined, entityId: menu.id };
           if (opt.goto) { const child = resolveGoto(opt.goto, depth + 1, nextPath); if (child) optNode.children.push(child); }
           return optNode;
         }),
@@ -736,7 +840,12 @@ function buildFlowTree(bot: Bot, keywords: Keyword[], menus: InteractiveMenu[]):
     if (goto.type === 'KEYWORD') {
       const kw = keywords.find(k => k.trigger.toLowerCase() === goto.target.toLowerCase());
       if (!kw) return { id: `kw_missing_${goto.target}_d${depth}`, label: `Keyword: ${goto.target} (não encontrada)`, type: 'keyword', children: [] };
-      const kwNode: TreeNode = { id: `kw_${kw.id}_d${depth}`, label: `Keyword: ${kw.trigger}`, type: 'keyword', children: [], gotoLabel: kw.goto ? `→ ${kw.goto.type.toLowerCase()}: ${kw.goto.target}` : undefined };
+      const kwNode: TreeNode = {
+        id: `kw_${kw.id}_d${depth}`, label: `Keyword: ${kw.trigger}`, type: 'keyword', children: [],
+        gotoLabel: kw.goto ? `→ ${kw.goto.type.toLowerCase()}: ${kw.goto.target}` : undefined,
+        entityId: kw.id,
+        captureInfo: kw.captureVariable ? `${kw.captureVariable.name} (${kw.captureVariable.type})` : undefined,
+      };
       if (kw.goto) { const child = resolveGoto(kw.goto, depth + 1, nextPath); if (child) kwNode.children.push(child); }
       return kwNode;
     }
@@ -765,7 +874,12 @@ function buildFlowTree(bot: Bot, keywords: Keyword[], menus: InteractiveMenu[]):
 
   for (const kw of keywords) {
     if (!referencedKeywords.has(kw.trigger.toLowerCase()) && kw.isActive) {
-      const kwNode: TreeNode = { id: `standalone_kw_${kw.id}`, label: `Keyword: ${kw.trigger}`, type: 'keyword', children: [], gotoLabel: kw.goto ? `→ ${kw.goto.type.toLowerCase()}: ${kw.goto.target}` : undefined };
+      const kwNode: TreeNode = {
+        id: `standalone_kw_${kw.id}`, label: `Keyword: ${kw.trigger}`, type: 'keyword', children: [],
+        gotoLabel: kw.goto ? `→ ${kw.goto.type.toLowerCase()}: ${kw.goto.target}` : undefined,
+        entityId: kw.id,
+        captureInfo: kw.captureVariable ? `${kw.captureVariable.name} (${kw.captureVariable.type})` : undefined,
+      };
       if (kw.goto) { const child = resolveGoto(kw.goto, 0, new Set([`KEYWORD:${kw.trigger.toLowerCase()}`])); if (child) kwNode.children.push(child); }
       root.children.push(kwNode);
     }
@@ -787,7 +901,7 @@ function buildFlowTree(bot: Bot, keywords: Keyword[], menus: InteractiveMenu[]):
   return root;
 }
 
-function TreeNodeView({ node, depth = 0 }: { node: TreeNode; depth?: number }) {
+function TreeNodeView({ node, depth = 0, onNodeClick }: { node: TreeNode; depth?: number; onNodeClick?: (node: TreeNode) => void }) {
   const icons: Record<TreeNode['type'], React.ReactNode> = {
     initial: <BotIcon size={12} />,
     keyword: <Key size={12} />,
@@ -796,15 +910,26 @@ function TreeNodeView({ node, depth = 0 }: { node: TreeNode; depth?: number }) {
     fallback: <ArrowRight size={12} />,
   };
 
+  const isClickable = onNodeClick && node.type !== 'initial';
+
   return (
     <div style={{ position: 'relative', marginLeft: depth > 0 ? 24 : 0 }}>
       {depth > 0 && <div className="flow-tree__connector-v" />}
       {depth > 0 && <div className="flow-tree__connector-h" />}
 
       <div className="flow-tree__node">
-        <span className={`flow-tree__label flow-tree__label--${node.type}`}>
+        <span
+          className={`flow-tree__label flow-tree__label--${node.type}${isClickable ? ' flow-tree__label--clickable' : ''}`}
+          onClick={isClickable ? () => onNodeClick(node) : undefined}
+          title={isClickable ? 'Clique para editar' : undefined}
+        >
           {icons[node.type]} {node.label}
         </span>
+        {node.captureInfo && (
+          <span className="flow-tree__capture-badge">
+            <Zap size={9} /> {node.captureInfo}
+          </span>
+        )}
         {node.gotoLabel && (
           <span className="flow-tree__goto-badge">{node.gotoLabel}</span>
         )}
@@ -814,7 +939,7 @@ function TreeNodeView({ node, depth = 0 }: { node: TreeNode; depth?: number }) {
         <div style={{ marginLeft: 16, position: 'relative' }}>
           <div style={{ position: 'absolute', left: -8, top: 0, bottom: 0, width: 1, background: 'var(--color-border)' }} />
           {node.children.map((child) => (
-            <TreeNodeView key={child.id} node={child} depth={depth + 1} />
+            <TreeNodeView key={child.id} node={child} depth={depth + 1} onNodeClick={onNodeClick} />
           ))}
         </div>
       )}
@@ -822,7 +947,10 @@ function TreeNodeView({ node, depth = 0 }: { node: TreeNode; depth?: number }) {
   );
 }
 
-function FlowTreeModal({ open, onClose, bot }: { open: boolean; onClose: () => void; bot: Bot }) {
+function FlowTreeModal({ open, onClose, bot, onEditKeyword, onEditMenu, onEditBot }: {
+  open: boolean; onClose: () => void; bot: Bot;
+  onEditKeyword?: () => void; onEditMenu?: () => void; onEditBot?: () => void;
+}) {
   const [keywords, setKeywords] = useState<Keyword[]>([]);
   const [menus, setMenus] = useState<InteractiveMenu[]>([]);
   const [loading, setLoading] = useState(true);
@@ -842,6 +970,19 @@ function FlowTreeModal({ open, onClose, bot }: { open: boolean; onClose: () => v
     return buildFlowTree(bot, keywords, menus);
   }, [bot, keywords, menus, loading]);
 
+  const handleNodeClick = (node: TreeNode) => {
+    if (node.type === 'keyword') {
+      onClose();
+      onEditKeyword?.();
+    } else if (node.type === 'menu' || node.type === 'option') {
+      onClose();
+      onEditMenu?.();
+    } else if (node.type === 'fallback') {
+      onClose();
+      onEditBot?.();
+    }
+  };
+
   return (
     <Modal open={open} onClose={onClose} title={`Árvore do Fluxo — ${bot.name}`} wide>
       {loading ? (
@@ -851,10 +992,11 @@ function FlowTreeModal({ open, onClose, bot }: { open: boolean; onClose: () => v
       ) : tree && tree.children.length > 0 ? (
         <div>
           <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 16 }}>
-            Nós com <span style={{ color: '#60a5fa' }}>→ goto</span> são referências many-to-many — o mesmo menu/keyword pode ser referenciado em múltiplos lugares.
+            Clique em qualquer nó para editar. Nós com <span style={{ color: '#60a5fa' }}>→ goto</span> são referências many-to-many.
+            {' '}<span style={{ color: '#f59e0b' }}>Nós com captura</span> indicam variáveis que serão pedidas ao usuário.
           </p>
           <div style={{ maxHeight: 520, overflowY: 'auto', overflowX: 'auto', paddingRight: 8 }}>
-            <TreeNodeView node={tree} />
+            <TreeNodeView node={tree} onNodeClick={handleNodeClick} />
           </div>
         </div>
       ) : (
@@ -1251,7 +1393,16 @@ export default function BotsPage() {
       {menuBot && <MenusModal open={!!menuBot} onClose={() => setMenuBot(null)} bot={menuBot} />}
       {waBot && <WhatsAppModal open={!!waBot} onClose={() => setWaBot(null)} bot={waBot} />}
       {emulatorBot && <WhatsAppEmulator open={!!emulatorBot} onClose={() => setEmulatorBot(null)} bot={emulatorBot} />}
-      {treeBot && <FlowTreeModal open={!!treeBot} onClose={() => setTreeBot(null)} bot={treeBot} />}
+      {treeBot && (
+        <FlowTreeModal
+          open={!!treeBot}
+          onClose={() => setTreeBot(null)}
+          bot={treeBot}
+          onEditKeyword={() => setKwBot(treeBot)}
+          onEditMenu={() => setMenuBot(treeBot)}
+          onEditBot={() => { setEditBot(treeBot); setShowForm(true); }}
+        />
+      )}
     </div>
   );
 }

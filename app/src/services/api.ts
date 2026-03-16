@@ -36,6 +36,12 @@ export interface GotoTarget {
   target: string;
 }
 
+export interface CaptureVariable {
+  name: string;
+  type: 'STRING' | 'NUMBER' | 'BOOLEAN' | 'DATE';
+  promptMessage: string;
+}
+
 export interface MenuOption {
   id: string;
   title: string;
@@ -51,6 +57,7 @@ export interface Keyword {
   priority: number;
   isActive: boolean;
   goto?: GotoTarget;
+  captureVariable?: CaptureVariable;
   createdAt: string;
 }
 
@@ -77,6 +84,7 @@ export interface InteractiveMenu {
   body?: string;
   footer?: string;
   options: MenuOption[];
+  captureVariable?: CaptureVariable;
   isActive: boolean;
   createdAt: string;
 }
@@ -203,7 +211,7 @@ class ApiService {
     return data;
   }
 
-  async createKeyword(botId: string, payload: { trigger: string; response: string; priority?: number; goto?: GotoTarget }) {
+  async createKeyword(botId: string, payload: { trigger: string; response: string; priority?: number; goto?: GotoTarget; captureVariable?: CaptureVariable }) {
     const { data } = await this.client.post(`/bots/${botId}/keywords`, payload);
     return data;
   }
@@ -224,7 +232,7 @@ class ApiService {
     return data;
   }
 
-  async createMenu(botId: string, payload: { trigger: string; title: string; body?: string; footer?: string; options: MenuOption[] }) {
+  async createMenu(botId: string, payload: { trigger: string; title: string; body?: string; footer?: string; options: MenuOption[]; captureVariable?: CaptureVariable }) {
     const { data } = await this.client.post(`/bots/${botId}/menus`, payload);
     return data;
   }

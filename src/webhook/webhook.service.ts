@@ -635,8 +635,6 @@ export class WebhookService {
       // Construir contexto da conversa (cache ou DB)
       const context = await this.getOrBuildContext(conversation);
 
-      const isFirstInteraction = context.messageCount === 0;
-
       await this.conversationService.saveMessage(
         conversation.id,
         'INBOUND',
@@ -661,27 +659,47 @@ export class WebhookService {
       const handledByCapture = await this.processVariableCapture(bot, channel, from, conversation, text);
       if (handledByCapture) return;
 
-      // Primeira interação: usar initialInteraction (goto) ou initialMessage (texto legado)
-      if (isFirstInteraction) {
+      // Primeira interação: usa a flag initialInteractionSent para garantir que o menu/keyword inicial
+      // seja enviado com sucesso antes de prosseguir com o fluxo normal.
+      // Se o envio falhar, a flag NÃO é marcada, e na próxima mensagem o bot tenta reenviar.
+      if (!conversation.initialInteractionSent) {
         const flow = this.parseFlowConfig(bot.flowConfig);
 
         if (flow.initialInteraction) {
           try {
             await this.executeGoto(bot.id, channel, from, conversation.id, flow.initialInteraction);
+            // Envio com sucesso — marcar flag para não reenviar
+            await this.prisma.conversation.update({
+              where: { id: conversation.id },
+              data: { initialInteractionSent: true },
+            });
+            this.logger.log(`Primeira interação enviada com sucesso para conversa ${conversation.id}`);
             return;
           } catch (error) {
-            this.logger.warn(`Falha ao executar initialInteraction: ${error.message}`);
-            await this.executeFallback(bot, channel, from, conversation.id, error.message);
+            this.logger.warn(`Falha ao executar initialInteraction: ${error.message} — será reenviada na próxima mensagem`);
+            // NÃO marca initialInteractionSent — na próxima mensagem tentará novamente
             return;
           }
         } else if (bot.initialMessage) {
-          const initialResult = await this.messaging.sendTextMessage(channel, from, bot.initialMessage);
-          await this.conversationService.saveMessage(
-            conversation.id,
-            'OUTBOUND',
-            bot.initialMessage,
-            initialResult?.messageId,
-          );
+          try {
+            const initialResult = await this.messaging.sendTextMessage(channel, from, bot.initialMessage);
+            await this.conversationService.saveMessage(
+              conversation.id,
+              'OUTBOUND',
+              bot.initialMessage,
+              initialResult?.messageId,
+            );
+            // Envio com sucesso — marcar flag
+            await this.prisma.conversation.update({
+              where: { id: conversation.id },
+              data: { initialInteractionSent: true },
+            });
+            this.logger.log(`Mensagem inicial enviada com sucesso para conversa ${conversation.id}`);
+            return;
+          } catch (error) {
+            this.logger.warn(`Falha ao enviar mensagem inicial: ${error.message} — será reenviada na próxima mensagem`);
+            return;
+          }
         }
       }
 
@@ -842,12 +860,6 @@ export class WebhookService {
         this.logger.warn(`Falha ao atualizar métricas do lead ${from}: ${err.message}`),
       );
 
-      // Verificar se é primeira interação (antes de salvar a mensagem)
-      const conversationMessagesCount = await this.prisma.message.count({
-        where: { conversationId: conversation.id },
-      });
-      const isFirstInteraction = conversationMessagesCount === 0;
-
       await this.conversationService.saveMessage(
         conversation.id,
         'INBOUND',
@@ -872,27 +884,42 @@ export class WebhookService {
       const handledByCapture = await this.processVariableCapture(bot, channel, from, conversation, selectedTitle);
       if (handledByCapture) return;
 
-      // Primeira interação: usar initialInteraction (goto) ou initialMessage (texto legado)
-      if (isFirstInteraction) {
+      // Primeira interação: usa a flag initialInteractionSent para garantir envio
+      if (!conversation.initialInteractionSent) {
         const flow = this.parseFlowConfig(bot.flowConfig);
 
         if (flow.initialInteraction) {
           try {
             await this.executeGoto(bot.id, channel, from, conversation.id, flow.initialInteraction);
+            await this.prisma.conversation.update({
+              where: { id: conversation.id },
+              data: { initialInteractionSent: true },
+            });
+            this.logger.log(`Primeira interação enviada com sucesso para conversa ${conversation.id}`);
             return;
           } catch (error) {
-            this.logger.warn(`Falha ao executar initialInteraction: ${error.message}`);
-            await this.executeFallback(bot, channel, from, conversation.id, error.message);
+            this.logger.warn(`Falha ao executar initialInteraction: ${error.message} — será reenviada na próxima mensagem`);
             return;
           }
         } else if (bot.initialMessage) {
-          const initialResult = await this.messaging.sendTextMessage(channel, from, bot.initialMessage);
-          await this.conversationService.saveMessage(
-            conversation.id,
-            'OUTBOUND',
-            bot.initialMessage,
-            initialResult?.messageId,
-          );
+          try {
+            const initialResult = await this.messaging.sendTextMessage(channel, from, bot.initialMessage);
+            await this.conversationService.saveMessage(
+              conversation.id,
+              'OUTBOUND',
+              bot.initialMessage,
+              initialResult?.messageId,
+            );
+            await this.prisma.conversation.update({
+              where: { id: conversation.id },
+              data: { initialInteractionSent: true },
+            });
+            this.logger.log(`Mensagem inicial enviada com sucesso para conversa ${conversation.id}`);
+            return;
+          } catch (error) {
+            this.logger.warn(`Falha ao enviar mensagem inicial: ${error.message} — será reenviada na próxima mensagem`);
+            return;
+          }
         }
       }
 

@@ -232,6 +232,7 @@ model Conversation {
   pendingVariableName   String?
   pendingVariableType   VariableType?
   pendingVariableGoto   Json?    // goto a executar após captura da variável
+  initialInteractionSent Boolean @default(false) // marca se a primeira interação (menu/keyword) foi enviada com sucesso
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 

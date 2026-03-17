@@ -189,15 +189,17 @@ export class EvolutionService {
     const client = this.getClient(baseUrl, apiKey);
     try {
       await client.post(`/webhook/set/${instanceName}`, {
-        enabled: true,
-        url: webhookUrl,
-        webhookByEvents: false,
-        webhookBase64: false,
-        events: [
-          'MESSAGES_UPSERT',
-          'MESSAGES_UPDATE',
-          'CONNECTION_UPDATE',
-        ],
+        webhook: {
+          enabled: true,
+          url: webhookUrl,
+          webhookByEvents: false,
+          webhookBase64: false,
+          events: [
+            'MESSAGES_UPSERT',
+            'MESSAGES_UPDATE',
+            'CONNECTION_UPDATE',
+          ],
+        },
       });
       this.logger.log(`Webhook configurado para instância '${instanceName}'`);
     } catch (error) {

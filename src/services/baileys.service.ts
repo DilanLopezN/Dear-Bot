@@ -107,6 +107,34 @@ export class BaileysService {
     }
   }
 
+  /** Envia mídia (imagem, documento, vídeo, áudio) */
+  async sendMediaMessage(
+    baseUrl: string,
+    apiKey: string,
+    instanceName: string,
+    to: string,
+    mediaType: 'image' | 'document' | 'video' | 'audio',
+    mediaUrl: string,
+    caption?: string,
+    filename?: string,
+  ) {
+    const client = this.getClient(baseUrl, apiKey);
+    try {
+      const response = await client.post(`/message/sendMedia/${instanceName}`, {
+        number: to,
+        mediatype: mediaType,
+        media: mediaUrl,
+        caption: caption || '',
+        fileName: filename || '',
+      });
+      this.logger.log(`[Baileys] Mídia (${mediaType}) enviada para ${to}`);
+      return response.data;
+    } catch (error) {
+      this.logger.error(`[Baileys] Erro ao enviar mídia: ${error.message}`);
+      throw error;
+    }
+  }
+
   /** Obtém QR Code para conexão */
   async getQrCode(baseUrl: string, apiKey: string, instanceName: string) {
     const client = this.getClient(baseUrl, apiKey);

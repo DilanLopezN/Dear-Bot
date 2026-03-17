@@ -9,6 +9,7 @@ import { GeminiService } from '../services/gemini.service';
 import { MessagingService, ChannelConfig } from '../services/messaging.service';
 import { ContactService } from '../contact/contact.service';
 import { LeadService } from '../lead/lead.service';
+import { IterationService } from '../iteration/iteration.service';
 import { ContextCacheService } from './context-cache.service';
 import { ConversationContext, serializeContextForAI } from './conversation-context';
 import { Prisma, VariableType } from '@prisma/client';
@@ -50,6 +51,7 @@ export class WebhookService {
     private messaging: MessagingService,
     private contactService: ContactService,
     private leadService: LeadService,
+    private iterationService: IterationService,
     private contextCache: ContextCacheService,
   ) {}
 
@@ -485,7 +487,84 @@ export class WebhookService {
       return true;
     }
 
+    // Suporte a ITERATION
+    if ((goto as any).type === 'ITERATION') {
+      await this.executeIterations(botId, channel, to, conversationId);
+      return true;
+    }
+
     return false;
+  }
+
+  /** Executa todas as iterações ativas do bot em sequência */
+  private async executeIterations(
+    botId: string,
+    channel: ChannelConfig,
+    to: string,
+    conversationId: string,
+  ) {
+    const iterations = await this.iterationService.findActiveByBot(botId);
+    if (!iterations.length) {
+      this.logger.warn(`Nenhuma iteração ativa encontrada para bot ${botId}`);
+      return;
+    }
+
+    for (const iteration of iterations) {
+      const content = iteration.content as any;
+
+      switch (iteration.type) {
+        case 'TEXT': {
+          const text = await this.interpolateVariables(content.message || '', conversationId);
+          const result = await this.messaging.sendTextMessage(channel, to, text);
+          await this.conversationService.saveMessage(conversationId, 'OUTBOUND', text, result?.messageId);
+          break;
+        }
+
+        case 'LINK': {
+          const linkText = content.title
+            ? `${content.title}\n${content.url}`
+            : content.url;
+          const interpolated = await this.interpolateVariables(linkText, conversationId);
+          const result = await this.messaging.sendTextMessage(channel, to, interpolated);
+          await this.conversationService.saveMessage(conversationId, 'OUTBOUND', interpolated, result?.messageId);
+          break;
+        }
+
+        case 'DOCUMENT': {
+          const mediaType = content.mediaType || 'document';
+          const result = await this.messaging.sendMediaMessage(
+            channel,
+            to,
+            mediaType,
+            content.url,
+            content.caption,
+            content.filename,
+          );
+          const savedContent = content.caption
+            ? `[${mediaType}] ${content.caption} — ${content.url}`
+            : `[${mediaType}] ${content.url}`;
+          await this.conversationService.saveMessage(conversationId, 'OUTBOUND', savedContent, result?.messageId);
+          break;
+        }
+
+        case 'GOTO': {
+          const gotoConfig: GotoConfig = { type: content.type, target: content.target };
+          await this.executeGoto(botId, channel, to, conversationId, gotoConfig);
+          break;
+        }
+
+        case 'CAPTURE_VARIABLE': {
+          const captureConfig = {
+            name: content.name,
+            type: content.variableType || 'STRING',
+            promptMessage: content.promptMessage,
+          };
+          const gotoAfter = content.goto ? { type: content.goto.type, target: content.goto.target } : undefined;
+          await this.startVariableCapture(botId, channel, to, conversationId, captureConfig, gotoAfter);
+          return; // Paramos a cadeia pois aguardamos input do usuário
+        }
+      }
+    }
   }
 
   private async executeFallback(

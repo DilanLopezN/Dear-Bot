@@ -161,6 +161,53 @@ export class MessagingService {
     return { messageId: result?.messages?.[0]?.id };
   }
 
+  async sendMediaMessage(
+    channel: ChannelConfig,
+    to: string,
+    mediaType: 'image' | 'document' | 'video' | 'audio',
+    mediaUrl: string,
+    caption?: string,
+    filename?: string,
+  ): Promise<SendResult> {
+    if (channel.provider === 'EVOLUTION') {
+      const result = await this.evolution.sendMediaMessage(
+        channel.evolutionApiUrl!,
+        channel.evolutionApiKey!,
+        channel.evolutionInstance!,
+        to,
+        mediaType,
+        mediaUrl,
+        caption,
+        filename,
+      );
+      return { messageId: result?.key?.id };
+    }
+
+    if (channel.provider === 'BAILEYS') {
+      const result = await this.baileys.sendMediaMessage(
+        channel.baileysApiUrl!,
+        channel.baileysApiKey!,
+        channel.baileysInstance!,
+        to,
+        mediaType,
+        mediaUrl,
+        caption,
+        filename,
+      );
+      return { messageId: result?.key?.id };
+    }
+
+    const result = await this.dialog360.sendMediaMessage(
+      channel.dialog360ApiKey!,
+      to,
+      mediaType,
+      mediaUrl,
+      caption,
+      filename,
+    );
+    return { messageId: result?.messages?.[0]?.id };
+  }
+
   async markAsRead(channel: ChannelConfig, messageId: string): Promise<void> {
     if (channel.provider === 'EVOLUTION' || channel.provider === 'BAILEYS') {
       // Evolution e Baileys marcam como lido automaticamente

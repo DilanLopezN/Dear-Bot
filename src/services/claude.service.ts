@@ -41,18 +41,15 @@ export class ClaudeService {
       // Adiciona mensagem atual
       messages.push({ role: 'user', content: userMessage });
 
-      let finalSystemPrompt = systemPrompt || 'Você é um assistente de atendimento ao cliente. Responda de forma educada, objetiva e útil. Responda no idioma do cliente.';
-      if (knowledgeContext) {
-        finalSystemPrompt += `\n\n## Base de Conhecimento\nUse as informações abaixo para responder às perguntas do usuário. Baseie suas respostas neste conhecimento quando relevante:\n\n${knowledgeContext}`;
-      }
-
-      const response = await client.messages.create({
+      const stream = client.messages.stream({
         model: model || 'claude-sonnet-4-20250514',
         max_tokens: maxTokens || 1024,
         temperature: temperature ?? 0.7,
         system: finalSystemPrompt,
         messages,
       });
+
+      const response = await stream.finalMessage();
 
       const textBlock = response.content.find((b) => b.type === 'text');
       return textBlock?.text || 'Desculpe, não consegui gerar uma resposta.';

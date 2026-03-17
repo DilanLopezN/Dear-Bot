@@ -381,6 +381,10 @@ export class WebhookService {
             conversationId,
             text,
             enrichedPrompt,
+            aiConfig.apiKey,
+            aiConfig.model,
+            aiConfig.maxTokens,
+            aiConfig.temperature,
           );
       }
     }

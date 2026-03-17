@@ -149,6 +149,15 @@ export interface Lead {
   history?: LeadHistoryEntry[];
 }
 
+export interface BotKnowledge {
+  id: string;
+  fileName: string;
+  fileType: string;
+  fileSize: number;
+  totalChunks: number;
+  createdAt: string;
+}
+
 export interface BotIteration {
   id: string;
   botId: string;
@@ -608,6 +617,27 @@ class ApiService {
 
   async recalculateLead(botId: string, id: string) {
     const { data } = await this.client.post(`/bots/${botId}/leads/${id}/recalculate`);
+    return data;
+  }
+
+  // ── Knowledge (Conhecimento IA) ──────────────────────────────────────────
+
+  async getKnowledge(botId: string) {
+    const { data } = await this.client.get(`/bots/${botId}/knowledge`);
+    return data;
+  }
+
+  async uploadKnowledge(botId: string, file: File) {
+    const formData = new FormData();
+    formData.append('file', file);
+    const { data } = await this.client.post(`/bots/${botId}/knowledge/upload`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return data;
+  }
+
+  async deleteKnowledge(botId: string, knowledgeId: string) {
+    const { data } = await this.client.delete(`/bots/${botId}/knowledge/${knowledgeId}`);
     return data;
   }
 

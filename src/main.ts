@@ -25,6 +25,13 @@ async function bootstrap() {
     }
   )
 
+  // Registrar multipart para upload de arquivos
+  await app.register(require('@fastify/multipart'), {
+    limits: {
+      fileSize: 10 * 1024 * 1024, // 10MB
+    },
+  });
+
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,

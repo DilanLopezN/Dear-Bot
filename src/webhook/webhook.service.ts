@@ -17,7 +17,7 @@ import { Prisma, VariableType } from '@prisma/client';
 type MessageStatus = 'SENT' | 'DELIVERED' | 'READ' | 'FAILED';
 
 type GotoConfig = {
-  type: 'MENU' | 'KEYWORD';
+  type: 'MENU' | 'KEYWORD' | 'ITERATION' | 'LAST_INTERACTION';
   target: string;
 };
 
@@ -29,6 +29,7 @@ type FlowStep = {
 
 type FlowConfig = {
   initialInteraction?: GotoConfig;
+  lastInteraction?: GotoConfig;
   steps?: FlowStep[];
   fallback?: {
     message: string;
@@ -463,11 +464,13 @@ export class WebhookService {
     to: string,
     conversationId: string,
     goto?: GotoConfig,
+    closeAfter = false,
   ) {
     if (!goto) return false;
 
     if (goto.type === 'MENU') {
       await this.sendMenu(botId, channel, to, conversationId, goto.target);
+      if (closeAfter) await this.closeConversation(conversationId);
       return true;
     }
 
@@ -477,19 +480,40 @@ export class WebhookService {
       // Se a keyword tem captura de variável, iniciar captura (goto será executado após captura)
       if (captureVariable) {
         await this.startVariableCapture(botId, channel, to, conversationId, captureVariable, nextGoto);
+        if (closeAfter && !nextGoto) await this.closeConversation(conversationId);
         return true;
       }
 
       // Se a keyword tiver goto, seguir a cadeia
       if (nextGoto) {
-        await this.executeGoto(botId, channel, to, conversationId, nextGoto);
+        await this.executeGoto(botId, channel, to, conversationId, nextGoto, closeAfter);
+      } else if (closeAfter) {
+        await this.closeConversation(conversationId);
       }
       return true;
     }
 
-    // Suporte a ITERATION
-    if ((goto as any).type === 'ITERATION') {
+    if (goto.type === 'ITERATION') {
       await this.executeIterations(botId, channel, to, conversationId);
+      if (closeAfter) await this.closeConversation(conversationId);
+      return true;
+    }
+
+    // LAST_INTERACTION: executa o lastInteraction configurado no flowConfig e fecha a conversa
+    if (goto.type === 'LAST_INTERACTION') {
+      const bot = await this.prisma.bot.findUnique({ where: { id: botId } });
+      if (bot) {
+        const flow = this.parseFlowConfig(bot.flowConfig);
+        if (flow.lastInteraction) {
+          await this.executeGoto(botId, channel, to, conversationId, flow.lastInteraction, true);
+        } else {
+          // Se não tem lastInteraction configurado, apenas fecha
+          const closeMsg = 'Atendimento encerrado. Obrigado pelo contato!';
+          const result = await this.messaging.sendTextMessage(channel, to, closeMsg);
+          await this.conversationService.saveMessage(conversationId, 'OUTBOUND', closeMsg, result?.messageId);
+          await this.closeConversation(conversationId);
+        }
+      }
       return true;
     }
 
@@ -563,8 +587,30 @@ export class WebhookService {
           await this.startVariableCapture(botId, channel, to, conversationId, captureConfig, gotoAfter);
           return; // Paramos a cadeia pois aguardamos input do usuário
         }
+
+        case 'CLOSE_CONVERSATION': {
+          const closeMsg = content.message || 'Atendimento encerrado. Obrigado pelo contato!';
+          const interpolatedMsg = await this.interpolateVariables(closeMsg, conversationId);
+          const result = await this.messaging.sendTextMessage(channel, to, interpolatedMsg);
+          await this.conversationService.saveMessage(conversationId, 'OUTBOUND', interpolatedMsg, result?.messageId);
+          await this.closeConversation(conversationId);
+          return; // Paramos a cadeia pois a conversa foi encerrada
+        }
       }
     }
+  }
+
+  /** Encerra a conversa, marcando como CLOSED */
+  private async closeConversation(conversationId: string) {
+    await this.prisma.conversation.update({
+      where: { id: conversationId },
+      data: {
+        status: 'CLOSED',
+        isActive: false,
+      },
+    });
+    this.contextCache.invalidate(conversationId);
+    this.logger.log(`Conversa ${conversationId} encerrada (CLOSED)`);
   }
 
   private async executeFallback(
@@ -734,6 +780,29 @@ export class WebhookService {
       if (conversation.status === 'HUMAN') {
         this.logger.log(`Conversa ${conversation.id} em modo humano, ignorando processamento do bot`);
         return;
+      }
+
+      // Se a conversa está encerrada (CLOSED), reabrir como nova conversa
+      if (conversation.status === 'CLOSED') {
+        await this.prisma.conversation.update({
+          where: { id: conversation.id },
+          data: { status: 'BOT', isActive: true, flowStepIndex: 0 },
+        });
+        this.contextCache.invalidate(conversation.id);
+        conversation.status = 'BOT';
+        context.status = 'BOT';
+        // Tratar como primeira interação novamente
+        const flow = this.parseFlowConfig(bot.flowConfig);
+        if (flow.initialInteraction) {
+          try {
+            await this.executeGoto(bot.id, channel, from, conversation.id, flow.initialInteraction);
+            return;
+          } catch (error) {
+            this.logger.warn(`Falha ao executar initialInteraction após reabrir: ${error.message}`);
+            await this.executeFallback(bot, channel, from, conversation.id, error.message);
+            return;
+          }
+        }
       }
 
       // Verificar se há captura de variável pendente
@@ -945,6 +1014,25 @@ export class WebhookService {
       if (conversation.status === 'HUMAN') {
         this.logger.log(`Conversa ${conversation.id} em modo humano, ignorando processamento do bot`);
         return;
+      }
+
+      // Se a conversa está encerrada (CLOSED), reabrir como nova conversa
+      if (conversation.status === 'CLOSED') {
+        await this.prisma.conversation.update({
+          where: { id: conversation.id },
+          data: { status: 'BOT', isActive: true, flowStepIndex: 0 },
+        });
+        this.contextCache.invalidate(conversation.id);
+        conversation.status = 'BOT';
+        const flow = this.parseFlowConfig(bot.flowConfig);
+        if (flow.initialInteraction) {
+          try {
+            await this.executeGoto(bot.id, channel, from, conversation.id, flow.initialInteraction);
+            return;
+          } catch (error) {
+            this.logger.warn(`Falha ao executar initialInteraction após reabrir: ${error.message}`);
+          }
+        }
       }
 
       // Se a conversa está aguardando variável, a seleção interativa pode ser usada como valor

@@ -9,6 +9,7 @@ import {
   Play, ArrowLeft, Check, CheckCheck, List, Cpu,
   GitBranch, ChevronRight, ArrowRight, Database, RotateCcw, Copy,
   Repeat, FileText, Link as LinkIcon, File, Variable,
+  GripVertical,
 } from 'lucide-react';
 import './BotsPage.css';
 
@@ -41,7 +42,7 @@ function FormField({ label, error, children }: { label: string; error?: string; 
 
 // ─── Goto Selector ───
 function GotoSelector({
-  gotoType, gotoTarget, onTypeChange, onTargetChange, keywords, menus, label, showIteration, showLastInteraction,
+  gotoType, gotoTarget, onTypeChange, onTargetChange, keywords, menus, iterations, label, showIteration, showLastInteraction,
 }: {
   gotoType: GotoTarget['type'] | '';
   gotoTarget: string;
@@ -49,15 +50,12 @@ function GotoSelector({
   onTargetChange: (v: string) => void;
   keywords: Keyword[];
   menus: InteractiveMenu[];
+  iterations?: BotIteration[];
   label?: string;
   showIteration?: boolean;
   showLastInteraction?: boolean;
 }) {
-  const targets = gotoType === 'MENU'
-    ? menus.filter(m => m.isActive !== false)
-    : gotoType === 'KEYWORD'
-      ? keywords.filter(k => k.isActive !== false)
-      : [];
+  const activeIterations = (iterations || []).filter(i => i.isActive !== false).sort((a, b) => a.order - b.order);
 
   return (
     <div className="goto-selector">
@@ -68,8 +66,7 @@ function GotoSelector({
           onChange={(e) => {
             const val = e.target.value as GotoTarget['type'] | '';
             onTypeChange(val);
-            // ITERATION e LAST_INTERACTION não precisam de target
-            if (val === 'ITERATION' || val === 'LAST_INTERACTION') {
+            if (val === 'LAST_INTERACTION') {
               onTargetChange('_auto');
             } else {
               onTargetChange('');
@@ -80,23 +77,28 @@ function GotoSelector({
           <option value="">Sem goto</option>
           <option value="MENU">Goto Menu</option>
           <option value="KEYWORD">Goto Keyword</option>
-          {showIteration && <option value="ITERATION">Goto Iterações</option>}
+          {showIteration && <option value="ITERATION">Goto Iteração</option>}
           {showLastInteraction && <option value="LAST_INTERACTION">Última Interação (encerrar)</option>}
         </select>
         {gotoType === 'MENU' || gotoType === 'KEYWORD' ? (
           <select value={gotoTarget} onChange={(e) => onTargetChange(e.target.value)} className="form-input">
             <option value="">Selecione...</option>
             {gotoType === 'MENU'
-              ? (targets as InteractiveMenu[]).map((t) => (
+              ? menus.filter(m => m.isActive !== false).map((t) => (
                   <option key={t.trigger} value={t.trigger}>{t.trigger} — {t.title}</option>
                 ))
-              : (targets as Keyword[]).map((t) => (
+              : keywords.filter(k => k.isActive !== false).map((t) => (
                   <option key={t.trigger} value={t.trigger}>{t.trigger} → {t.response.substring(0, 40)}{t.response.length > 40 ? '...' : ''}</option>
                 ))
             }
           </select>
         ) : gotoType === 'ITERATION' ? (
-          <div className="goto-selector__placeholder" style={{ color: '#f59e0b', fontSize: 12 }}>Executará todas as iterações do bot</div>
+          <select value={gotoTarget} onChange={(e) => onTargetChange(e.target.value)} className="form-input">
+            <option value="">Selecione uma iteração...</option>
+            {activeIterations.map((iter) => (
+              <option key={iter.id} value={iter.id}>{iter.name} ({ITERATION_TYPES.find(t => t.value === iter.type)?.label || iter.type})</option>
+            ))}
+          </select>
         ) : gotoType === 'LAST_INTERACTION' ? (
           <div className="goto-selector__placeholder" style={{ color: '#f87171', fontSize: 12 }}>Executará a última interação e encerrará</div>
         ) : (
@@ -117,6 +119,7 @@ function BotFormModal({ open, onClose, bot }: { open: boolean; onClose: () => vo
   const [aiConfigs, setAiConfigs] = useState<any[]>([]);
   const [keywords, setKeywords] = useState<Keyword[]>([]);
   const [menus, setMenus] = useState<InteractiveMenu[]>([]);
+  const [iterations, setIterations] = useState<BotIteration[]>([]);
   const responseMode = watch('responseMode');
 
   const [initType, setInitType] = useState<GotoTarget['type'] | ''>(bot?.flowConfig?.initialInteraction?.type || '');
@@ -142,8 +145,19 @@ function BotFormModal({ open, onClose, bot }: { open: boolean; onClose: () => vo
     if (open) {
       api.getAiConfigs().then(setAiConfigs).catch(() => setAiConfigs([]));
       if (bot) {
-        api.getKeywords(bot.id).then(setKeywords).catch(() => setKeywords([]));
-        api.getMenus(bot.id).then(setMenus).catch(() => setMenus([]));
+        Promise.all([
+          api.getKeywords(bot.id),
+          api.getMenus(bot.id),
+          api.getIterations(bot.id),
+        ]).then(([kws, mns, iters]) => {
+          setKeywords(kws);
+          setMenus(mns);
+          setIterations(iters);
+        }).catch(() => {
+          setKeywords([]);
+          setMenus([]);
+          setIterations([]);
+        });
       }
     }
   }, [open, bot]);
@@ -209,7 +223,7 @@ function BotFormModal({ open, onClose, bot }: { open: boolean; onClose: () => vo
             Escolha qual keyword, menu ou iteração será enviado quando o usuário iniciar a conversa.
           </p>
           {bot ? (
-            <GotoSelector gotoType={initType} gotoTarget={initTarget} onTypeChange={setInitType} onTargetChange={setInitTarget} keywords={keywords} menus={menus} showIteration />
+            <GotoSelector gotoType={initType} gotoTarget={initTarget} onTypeChange={setInitType} onTargetChange={setInitTarget} keywords={keywords} menus={menus} iterations={iterations} showIteration />
           ) : (
             <p style={{ fontSize: 12, color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
               Salve o bot primeiro e depois configure a primeira interação.
@@ -226,7 +240,7 @@ function BotFormModal({ open, onClose, bot }: { open: boolean; onClose: () => vo
             O diálogo só reinicia se o contato enviar uma nova mensagem.
           </p>
           {bot ? (
-            <GotoSelector gotoType={lastType} gotoTarget={lastTarget} onTypeChange={setLastType} onTargetChange={setLastTarget} keywords={keywords} menus={menus} showIteration />
+            <GotoSelector gotoType={lastType} gotoTarget={lastTarget} onTypeChange={setLastType} onTargetChange={setLastTarget} keywords={keywords} menus={menus} iterations={iterations} showIteration />
           ) : (
             <p style={{ fontSize: 12, color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
               Salve o bot primeiro e depois configure a última interação.
@@ -244,7 +258,7 @@ function BotFormModal({ open, onClose, bot }: { open: boolean; onClose: () => vo
             <input value={fallbackMsg} onChange={(e) => setFallbackMsg(e.target.value)} placeholder="Desculpe, ocorreu um erro..." className="form-input" />
           </FormField>
           {bot && (
-            <GotoSelector gotoType={fallbackGotoType} gotoTarget={fallbackGotoTarget} onTypeChange={setFallbackGotoType} onTargetChange={setFallbackGotoTarget} keywords={keywords} menus={menus} label="Goto após fallback" showIteration showLastInteraction />
+            <GotoSelector gotoType={fallbackGotoType} gotoTarget={fallbackGotoTarget} onTypeChange={setFallbackGotoType} onTargetChange={setFallbackGotoTarget} keywords={keywords} menus={menus} iterations={iterations} label="Goto após fallback" showIteration showLastInteraction />
           )}
         </div>
 
@@ -325,6 +339,7 @@ function KeywordsModal({ open, onClose, bot }: { open: boolean; onClose: () => v
           <input {...register('response', { required: true })} placeholder="Resposta do bot" className="form-input" style={{ flex: 1 }} />
         </div>
         <GotoSelector gotoType={gotoType} gotoTarget={gotoTarget} onTypeChange={setGotoType} onTargetChange={setGotoTarget} keywords={keywords} menus={menus} label="Goto (navegação após resposta)" showIteration showLastInteraction />
+
 
         <div className="capture-section">
           <label className="capture-toggle">
@@ -851,9 +866,13 @@ interface TreeNode {
   gotoLabel?: string;
   entityId?: string;
   captureInfo?: string;
+  iterationType?: string;
+  order?: number;
 }
 
-function buildFlowTree(bot: Bot, keywords: Keyword[], menus: InteractiveMenu[]): TreeNode {
+function buildFlowTree(bot: Bot, keywords: Keyword[], menus: InteractiveMenu[], iterations?: BotIteration[]): TreeNode {
+  const sortedIterations = [...(iterations || [])].filter(i => i.isActive !== false).sort((a, b) => a.order - b.order);
+
   const resolveGoto = (goto: GotoTarget, depth: number, pathVisited: Set<string>): TreeNode | null => {
     if (depth > 10) return null;
     const key = `${goto.type}:${goto.target.toLowerCase()}`;
@@ -890,7 +909,38 @@ function buildFlowTree(bot: Bot, keywords: Keyword[], menus: InteractiveMenu[]):
       return kwNode;
     }
     if (goto.type === 'ITERATION') {
-      return { id: `iteration_d${depth}`, label: 'Iterações do bot', type: 'iteration', children: [] };
+      // Resolve to specific iteration if target is an ID
+      const iter = sortedIterations.find(i => i.id === goto.target);
+      if (iter) {
+        const typeInfo = ITERATION_TYPES.find(t => t.value === iter.type);
+        return {
+          id: `iteration_${iter.id}_d${depth}`,
+          label: `Iteração: ${iter.name}`,
+          type: 'iteration',
+          children: [],
+          entityId: iter.id,
+          iterationType: typeInfo?.label || iter.type,
+          order: iter.order,
+        };
+      }
+      // Fallback: show all iterations as children
+      return {
+        id: `iterations_all_d${depth}`,
+        label: 'Iterações do bot',
+        type: 'iteration',
+        children: sortedIterations.map(i => {
+          const typeInfo = ITERATION_TYPES.find(t => t.value === i.type);
+          return {
+            id: `iteration_${i.id}_d${depth}`,
+            label: `${i.name}`,
+            type: 'iteration' as const,
+            children: [],
+            entityId: i.id,
+            iterationType: typeInfo?.label || i.type,
+            order: i.order,
+          };
+        }),
+      };
     }
     if (goto.type === 'LAST_INTERACTION') {
       const lastNode: TreeNode = { id: `last_interaction_d${depth}`, label: 'Última Interação (encerrar)', type: 'close', children: [] };
@@ -909,6 +959,31 @@ function buildFlowTree(bot: Bot, keywords: Keyword[], menus: InteractiveMenu[]):
   if (flow?.initialInteraction) {
     const initNode = resolveGoto(flow.initialInteraction, 0, new Set());
     if (initNode) root.children.push(initNode);
+  }
+
+  // Show all iterations in the tree
+  if (sortedIterations.length > 0) {
+    for (const iter of sortedIterations) {
+      const typeInfo = ITERATION_TYPES.find(t => t.value === iter.type);
+      const iterNode: TreeNode = {
+        id: `iter_${iter.id}`,
+        label: `Iteração: ${iter.name}`,
+        type: 'iteration',
+        children: [],
+        entityId: iter.id,
+        iterationType: typeInfo?.label || iter.type,
+        order: iter.order,
+      };
+      // If iteration has a GOTO content, resolve it
+      if (iter.type === 'GOTO' && iter.content) {
+        const c = iter.content as any;
+        if (c.type && c.target) {
+          const child = resolveGoto({ type: c.type, target: c.target }, 1, new Set());
+          if (child) iterNode.children.push(child);
+        }
+      }
+      root.children.push(iterNode);
+    }
   }
 
   if (flow?.lastInteraction) {
@@ -959,7 +1034,19 @@ function buildFlowTree(bot: Bot, keywords: Keyword[], menus: InteractiveMenu[]):
   return root;
 }
 
-function TreeNodeView({ node, depth = 0, onNodeClick }: { node: TreeNode; depth?: number; onNodeClick?: (node: TreeNode) => void }) {
+function TreeNodeView({
+  node, depth = 0, onNodeClick, draggable, onDragStart, onDragOver, onDragEnd, onDrop, dragOverId,
+}: {
+  node: TreeNode;
+  depth?: number;
+  onNodeClick?: (node: TreeNode) => void;
+  draggable?: boolean;
+  onDragStart?: (e: React.DragEvent, node: TreeNode) => void;
+  onDragOver?: (e: React.DragEvent, node: TreeNode) => void;
+  onDragEnd?: () => void;
+  onDrop?: (e: React.DragEvent, node: TreeNode) => void;
+  dragOverId?: string | null;
+}) {
   const icons: Record<TreeNode['type'], React.ReactNode> = {
     initial: <BotIcon size={12} />,
     keyword: <Key size={12} />,
@@ -971,13 +1058,27 @@ function TreeNodeView({ node, depth = 0, onNodeClick }: { node: TreeNode; depth?
   };
 
   const isClickable = onNodeClick && node.type !== 'initial';
+  const isDraggable = draggable && node.type !== 'initial';
+  const isDragOver = dragOverId === node.id;
 
   return (
-    <div style={{ position: 'relative', marginLeft: depth > 0 ? 24 : 0 }}>
+    <div
+      style={{ position: 'relative', marginLeft: depth > 0 ? 24 : 0 }}
+      draggable={isDraggable}
+      onDragStart={isDraggable ? (e) => onDragStart?.(e, node) : undefined}
+      onDragOver={isDraggable ? (e) => { e.preventDefault(); onDragOver?.(e, node); } : undefined}
+      onDragEnd={isDraggable ? () => onDragEnd?.() : undefined}
+      onDrop={isDraggable ? (e) => { e.preventDefault(); onDrop?.(e, node); } : undefined}
+    >
       {depth > 0 && <div className="flow-tree__connector-v" />}
       {depth > 0 && <div className="flow-tree__connector-h" />}
 
-      <div className="flow-tree__node">
+      <div className={`flow-tree__node${isDragOver ? ' flow-tree__node--drag-over' : ''}`}>
+        {isDraggable && (
+          <span className="flow-tree__drag-handle" title="Arraste para reordenar">
+            <GripVertical size={14} />
+          </span>
+        )}
         <span
           className={`flow-tree__label flow-tree__label--${node.type}${isClickable ? ' flow-tree__label--clickable' : ''}`}
           onClick={isClickable ? () => onNodeClick(node) : undefined}
@@ -985,6 +1086,12 @@ function TreeNodeView({ node, depth = 0, onNodeClick }: { node: TreeNode; depth?
         >
           {icons[node.type]} {node.label}
         </span>
+        {node.iterationType && (
+          <span className="flow-tree__iteration-type-badge">{node.iterationType}</span>
+        )}
+        {node.order !== undefined && (
+          <span className="flow-tree__order-badge">#{node.order}</span>
+        )}
         {node.captureInfo && (
           <span className="flow-tree__capture-badge">
             <Zap size={9} /> {node.captureInfo}
@@ -999,7 +1106,18 @@ function TreeNodeView({ node, depth = 0, onNodeClick }: { node: TreeNode; depth?
         <div style={{ marginLeft: 16, position: 'relative' }}>
           <div style={{ position: 'absolute', left: -8, top: 0, bottom: 0, width: 1, background: 'var(--color-border)' }} />
           {node.children.map((child) => (
-            <TreeNodeView key={child.id} node={child} depth={depth + 1} onNodeClick={onNodeClick} />
+            <TreeNodeView
+              key={child.id}
+              node={child}
+              depth={depth + 1}
+              onNodeClick={onNodeClick}
+              draggable={draggable}
+              onDragStart={onDragStart}
+              onDragOver={onDragOver}
+              onDragEnd={onDragEnd}
+              onDrop={onDrop}
+              dragOverId={dragOverId}
+            />
           ))}
         </div>
       )}
@@ -1013,22 +1131,28 @@ function FlowTreeModal({ open, onClose, bot, onEditKeyword, onEditMenu, onEditBo
 }) {
   const [keywords, setKeywords] = useState<Keyword[]>([]);
   const [menus, setMenus] = useState<InteractiveMenu[]>([]);
+  const [iterations, setIterations] = useState<BotIteration[]>([]);
   const [loading, setLoading] = useState(true);
+  const [dragNodeId, setDragNodeId] = useState<string | null>(null);
+  const [dragOverNodeId, setDragOverNodeId] = useState<string | null>(null);
+  const [reordering, setReordering] = useState(false);
+
+  const load = () => {
+    setLoading(true);
+    Promise.all([api.getKeywords(bot.id), api.getMenus(bot.id), api.getIterations(bot.id)])
+      .then(([kws, mns, iters]) => { setKeywords(kws); setMenus(mns); setIterations(iters); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  };
 
   useEffect(() => {
-    if (open) {
-      setLoading(true);
-      Promise.all([api.getKeywords(bot.id), api.getMenus(bot.id)])
-        .then(([kws, mns]) => { setKeywords(kws); setMenus(mns); })
-        .catch(() => {})
-        .finally(() => setLoading(false));
-    }
+    if (open) load();
   }, [open, bot.id]);
 
   const tree = useMemo(() => {
     if (loading) return null;
-    return buildFlowTree(bot, keywords, menus);
-  }, [bot, keywords, menus, loading]);
+    return buildFlowTree(bot, keywords, menus, iterations);
+  }, [bot, keywords, menus, iterations, loading]);
 
   const handleNodeClick = (node: TreeNode) => {
     if (node.type === 'keyword') {
@@ -1046,6 +1170,71 @@ function FlowTreeModal({ open, onClose, bot, onEditKeyword, onEditMenu, onEditBo
     }
   };
 
+  // Extract iteration entity id from tree node id
+  const getIterationId = (nodeId: string): string | null => {
+    const match = nodeId.match(/^iter_(.+)$/);
+    return match ? match[1] : null;
+  };
+
+  const handleDragStart = (_e: React.DragEvent, node: TreeNode) => {
+    setDragNodeId(node.id);
+  };
+
+  const handleDragOver = (_e: React.DragEvent, node: TreeNode) => {
+    if (node.id !== dragNodeId) {
+      setDragOverNodeId(node.id);
+    }
+  };
+
+  const handleDragEnd = () => {
+    setDragNodeId(null);
+    setDragOverNodeId(null);
+  };
+
+  const handleDrop = async (_e: React.DragEvent, targetNode: TreeNode) => {
+    if (!dragNodeId || dragNodeId === targetNode.id || !tree) return;
+
+    // Get root children (the flat list)
+    const children = [...tree.children];
+    const dragIdx = children.findIndex(c => c.id === dragNodeId);
+    const dropIdx = children.findIndex(c => c.id === targetNode.id);
+
+    if (dragIdx === -1 || dropIdx === -1) {
+      handleDragEnd();
+      return;
+    }
+
+    // Reorder
+    const [moved] = children.splice(dragIdx, 1);
+    children.splice(dropIdx, 0, moved);
+
+    // Collect iteration nodes and update their order
+    const iterationNodes = children.filter(c => c.id.startsWith('iter_'));
+    const updates: Promise<void>[] = [];
+
+    setReordering(true);
+    for (let i = 0; i < iterationNodes.length; i++) {
+      const iterId = getIterationId(iterationNodes[i].id);
+      if (iterId) {
+        const iter = iterations.find(it => it.id === iterId);
+        if (iter && iter.order !== i) {
+          updates.push(
+            api.updateIteration(bot.id, iterId, { order: i }).catch(() => {})
+          );
+        }
+      }
+    }
+
+    if (updates.length > 0) {
+      await Promise.all(updates);
+      toast.success('Ordem atualizada!');
+      load();
+    }
+
+    setReordering(false);
+    handleDragEnd();
+  };
+
   return (
     <Modal open={open} onClose={onClose} title={`Árvore do Fluxo — ${bot.name}`} wide>
       {loading ? (
@@ -1055,18 +1244,33 @@ function FlowTreeModal({ open, onClose, bot, onEditKeyword, onEditMenu, onEditBo
       ) : tree && tree.children.length > 0 ? (
         <div>
           <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 16 }}>
-            Clique em qualquer nó para editar. Nós com <span style={{ color: '#60a5fa' }}>→ goto</span> são referências many-to-many.
+            <GripVertical size={11} style={{ display: 'inline', verticalAlign: 'middle' }} /> Arraste os itens para reordenar o fluxo.
+            Clique em qualquer nó para editar.
             {' '}<span style={{ color: '#f59e0b' }}>Nós com captura</span> indicam variáveis que serão pedidas ao usuário.
           </p>
+          {reordering && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, fontSize: 12, color: 'var(--color-accent)' }}>
+              <Loader2 size={14} className="animate-spin" /> Atualizando ordem...
+            </div>
+          )}
           <div style={{ maxHeight: 520, overflowY: 'auto', overflowX: 'auto', paddingRight: 8 }}>
-            <TreeNodeView node={tree} onNodeClick={handleNodeClick} />
+            <TreeNodeView
+              node={tree}
+              onNodeClick={handleNodeClick}
+              draggable
+              onDragStart={handleDragStart}
+              onDragOver={handleDragOver}
+              onDragEnd={handleDragEnd}
+              onDrop={handleDrop}
+              dragOverId={dragOverNodeId}
+            />
           </div>
         </div>
       ) : (
         <div className="empty-state">
           <GitBranch size={40} className="empty-state__icon" />
           <p className="empty-state__text">
-            Nenhum fluxo configurado. Adicione keywords, menus e configure a primeira interação.
+            Nenhum fluxo configurado. Adicione keywords, menus, iterações e configure a primeira interação.
           </p>
         </div>
       )}
@@ -1603,7 +1807,9 @@ function buildFlowPreview(bot: Bot): string[] {
   const preview: string[] = [];
   const flow = bot.flowConfig;
   if (flow?.initialInteraction) {
-    const label = flow.initialInteraction.type === 'ITERATION' ? 'iterações' : `${flow.initialInteraction.type.toLowerCase()}: ${flow.initialInteraction.target}`;
+    const label = flow.initialInteraction.type === 'ITERATION'
+      ? `iteração: ${flow.initialInteraction.target || 'todas'}`
+      : `${flow.initialInteraction.type.toLowerCase()}: ${flow.initialInteraction.target}`;
     preview.push(`inicio → ${label}`);
   }
   else if (bot.initialMessage?.trim()) preview.push(`inicio: ${bot.initialMessage.trim()}`);
@@ -1902,6 +2108,7 @@ function IterationsModal({ open, onClose, bot }: { open: boolean; onClose: () =>
               onTargetChange={setGotoTarget}
               keywords={keywords}
               menus={menus}
+              iterations={iterations}
               label="Destino do goto"
               showIteration
               showLastInteraction
@@ -1934,6 +2141,7 @@ function IterationsModal({ open, onClose, bot }: { open: boolean; onClose: () =>
                 onTargetChange={setCapGotoTarget}
                 keywords={keywords}
                 menus={menus}
+                iterations={iterations}
                 label="Goto após captura (opcional)"
                 showIteration
                 showLastInteraction

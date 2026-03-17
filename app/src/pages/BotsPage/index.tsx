@@ -1,13 +1,14 @@
 import { useEffect, useState, useRef, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { useBotStore, type Bot } from '@/stores/bot.store';
-import { api, extractApiError, type InteractiveMenu, type MenuOption, type FlowConfig, type GotoTarget, type Keyword, type CaptureVariable } from '@/services/api';
+import { api, extractApiError, type InteractiveMenu, type MenuOption, type FlowConfig, type GotoTarget, type Keyword, type CaptureVariable, type BotIteration } from '@/services/api';
 import { toast } from 'sonner';
 import {
   Plus, Trash2, Pencil, Zap, Key, X, Power, PowerOff,
   MessageSquare, Bot as BotIcon, Phone, Loader2, Send,
   Play, ArrowLeft, Check, CheckCheck, List, Cpu,
   GitBranch, ChevronRight, ArrowRight, Database, RotateCcw, Copy,
+  Repeat, FileText, Link as LinkIcon, File, Variable,
 } from 'lucide-react';
 import './BotsPage.css';
 
@@ -1469,6 +1470,364 @@ function buildFlowPreview(bot: Bot): string[] {
   return preview;
 }
 
+// ─── Iterations Modal ───
+const ITERATION_TYPES = [
+  { value: 'TEXT', label: 'Texto', icon: FileText, color: '#4ade80' },
+  { value: 'LINK', label: 'Link', icon: LinkIcon, color: '#60a5fa' },
+  { value: 'DOCUMENT', label: 'Documento', icon: File, color: '#f59e0b' },
+  { value: 'GOTO', label: 'Goto', icon: ArrowRight, color: '#c084fc' },
+  { value: 'CAPTURE_VARIABLE', label: 'Capturar Variável', icon: Variable, color: '#f472b6' },
+] as const;
+
+function IterationsModal({ open, onClose, bot }: { open: boolean; onClose: () => void; bot: Bot }) {
+  const [iterations, setIterations] = useState<BotIteration[]>([]);
+  const [keywords, setKeywords] = useState<Keyword[]>([]);
+  const [menus, setMenus] = useState<InteractiveMenu[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showAdd, setShowAdd] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  // Form state
+  const [formName, setFormName] = useState('');
+  const [formType, setFormType] = useState<BotIteration['type']>('TEXT');
+  const [formOrder, setFormOrder] = useState(0);
+
+  // TEXT content
+  const [textMessage, setTextMessage] = useState('');
+
+  // LINK content
+  const [linkUrl, setLinkUrl] = useState('');
+  const [linkTitle, setLinkTitle] = useState('');
+
+  // DOCUMENT content
+  const [docUrl, setDocUrl] = useState('');
+  const [docFilename, setDocFilename] = useState('');
+  const [docCaption, setDocCaption] = useState('');
+  const [docMediaType, setDocMediaType] = useState<'image' | 'document' | 'video' | 'audio'>('document');
+
+  // GOTO content
+  const [gotoType, setGotoType] = useState<GotoTarget['type'] | ''>('');
+  const [gotoTarget, setGotoTarget] = useState('');
+
+  // CAPTURE_VARIABLE content
+  const [capName, setCapName] = useState('');
+  const [capType, setCapType] = useState<CaptureVariable['type']>('STRING');
+  const [capPrompt, setCapPrompt] = useState('');
+  const [capGotoType, setCapGotoType] = useState<GotoTarget['type'] | ''>('');
+  const [capGotoTarget, setCapGotoTarget] = useState('');
+
+  const resetForm = () => {
+    setFormName('');
+    setFormType('TEXT');
+    setFormOrder(0);
+    setTextMessage('');
+    setLinkUrl('');
+    setLinkTitle('');
+    setDocUrl('');
+    setDocFilename('');
+    setDocCaption('');
+    setDocMediaType('document');
+    setGotoType('');
+    setGotoTarget('');
+    setCapName('');
+    setCapType('STRING');
+    setCapPrompt('');
+    setCapGotoType('');
+    setCapGotoTarget('');
+    setEditingId(null);
+  };
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const [iters, kws, mns] = await Promise.all([
+        api.getIterations(bot.id),
+        api.getKeywords(bot.id),
+        api.getMenus(bot.id),
+      ]);
+      setIterations(iters);
+      setKeywords(kws);
+      setMenus(mns);
+    } catch {} finally { setLoading(false); }
+  };
+
+  useEffect(() => { if (open) load(); }, [open]);
+
+  const buildContent = (): Record<string, any> => {
+    switch (formType) {
+      case 'TEXT':
+        return { message: textMessage };
+      case 'LINK':
+        return { url: linkUrl, title: linkTitle || undefined };
+      case 'DOCUMENT':
+        return { url: docUrl, filename: docFilename || undefined, caption: docCaption || undefined, mediaType: docMediaType };
+      case 'GOTO':
+        return { type: gotoType, target: gotoTarget };
+      case 'CAPTURE_VARIABLE':
+        return {
+          name: capName,
+          variableType: capType,
+          promptMessage: capPrompt,
+          goto: capGotoType && capGotoTarget ? { type: capGotoType, target: capGotoTarget } : undefined,
+        };
+      default:
+        return {};
+    }
+  };
+
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formName.trim()) { toast.error('Nome é obrigatório'); return; }
+
+    const payload = {
+      name: formName.trim(),
+      type: formType,
+      content: buildContent(),
+      order: formOrder,
+    };
+
+    try {
+      if (editingId) {
+        await api.updateIteration(bot.id, editingId, payload);
+        toast.success('Iteração atualizada!');
+      } else {
+        await api.createIteration(bot.id, payload);
+        toast.success('Iteração criada!');
+      }
+      resetForm();
+      setShowAdd(false);
+      load();
+    } catch (err) {
+      toast.error(`Erro ao salvar iteração: ${extractApiError(err)}`);
+    }
+  };
+
+  const onDelete = async (id: string) => {
+    try {
+      await api.deleteIteration(bot.id, id);
+      toast.success('Iteração removida!');
+      load();
+    } catch (err) {
+      toast.error(`Erro ao remover iteração: ${extractApiError(err)}`);
+    }
+  };
+
+  const onEdit = (iter: BotIteration) => {
+    setShowAdd(true);
+    setEditingId(iter.id);
+    setFormName(iter.name);
+    setFormType(iter.type);
+    setFormOrder(iter.order);
+
+    const c = iter.content as any;
+    switch (iter.type) {
+      case 'TEXT':
+        setTextMessage(c.message || '');
+        break;
+      case 'LINK':
+        setLinkUrl(c.url || '');
+        setLinkTitle(c.title || '');
+        break;
+      case 'DOCUMENT':
+        setDocUrl(c.url || '');
+        setDocFilename(c.filename || '');
+        setDocCaption(c.caption || '');
+        setDocMediaType(c.mediaType || 'document');
+        break;
+      case 'GOTO':
+        setGotoType(c.type || '');
+        setGotoTarget(c.target || '');
+        break;
+      case 'CAPTURE_VARIABLE':
+        setCapName(c.name || '');
+        setCapType(c.variableType || 'STRING');
+        setCapPrompt(c.promptMessage || '');
+        setCapGotoType(c.goto?.type || '');
+        setCapGotoTarget(c.goto?.target || '');
+        break;
+    }
+  };
+
+  const getTypeInfo = (type: string) => ITERATION_TYPES.find(t => t.value === type) || ITERATION_TYPES[0];
+
+  const getContentPreview = (iter: BotIteration) => {
+    const c = iter.content as any;
+    switch (iter.type) {
+      case 'TEXT': return c.message?.substring(0, 60) + (c.message?.length > 60 ? '...' : '') || '';
+      case 'LINK': return c.url || '';
+      case 'DOCUMENT': return `${c.mediaType || 'document'}: ${c.filename || c.url || ''}`;
+      case 'GOTO': return `${(c.type || '').toLowerCase()}: ${c.target || ''}`;
+      case 'CAPTURE_VARIABLE': return `${c.name} (${c.variableType || 'STRING'})`;
+      default: return '';
+    }
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title={`Iterações — ${bot.name}`} wide>
+      <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 18 }}>
+        Configure as interações do bot: textos, links, documentos, navegação (goto) e captura de variáveis.
+      </p>
+
+      {showAdd ? (
+        <form onSubmit={onSubmit}>
+          <div className="form-row">
+            <FormField label="Nome da iteração">
+              <input className="form-input" placeholder="Ex: Boas-vindas, Enviar catálogo" value={formName} onChange={e => setFormName(e.target.value)} />
+            </FormField>
+            <FormField label="Tipo">
+              <select className="form-input" value={formType} onChange={e => { setFormType(e.target.value as BotIteration['type']); }}>
+                {ITERATION_TYPES.map(t => (
+                  <option key={t.value} value={t.value}>{t.label}</option>
+                ))}
+              </select>
+            </FormField>
+            <FormField label="Ordem">
+              <input className="form-input" type="number" value={formOrder} onChange={e => setFormOrder(Number(e.target.value))} style={{ width: 80 }} />
+            </FormField>
+          </div>
+
+          {/* TEXT fields */}
+          {formType === 'TEXT' && (
+            <FormField label="Mensagem">
+              <textarea className="form-input form-textarea" placeholder="Texto que o bot enviará. Use {{variavel}} para interpolação." rows={3} value={textMessage} onChange={e => setTextMessage(e.target.value)} />
+            </FormField>
+          )}
+
+          {/* LINK fields */}
+          {formType === 'LINK' && (
+            <>
+              <FormField label="URL do link">
+                <input className="form-input" placeholder="https://exemplo.com" value={linkUrl} onChange={e => setLinkUrl(e.target.value)} />
+              </FormField>
+              <FormField label="Título (opcional)">
+                <input className="form-input" placeholder="Confira nosso site" value={linkTitle} onChange={e => setLinkTitle(e.target.value)} />
+              </FormField>
+            </>
+          )}
+
+          {/* DOCUMENT fields */}
+          {formType === 'DOCUMENT' && (
+            <>
+              <div className="form-row">
+                <FormField label="URL do arquivo">
+                  <input className="form-input" placeholder="https://exemplo.com/arquivo.pdf" value={docUrl} onChange={e => setDocUrl(e.target.value)} />
+                </FormField>
+                <FormField label="Tipo de mídia">
+                  <select className="form-input" value={docMediaType} onChange={e => setDocMediaType(e.target.value as any)}>
+                    <option value="document">Documento (PDF, etc)</option>
+                    <option value="image">Imagem</option>
+                    <option value="video">Vídeo</option>
+                    <option value="audio">Áudio</option>
+                  </select>
+                </FormField>
+              </div>
+              <div className="form-row">
+                <FormField label="Nome do arquivo (opcional)">
+                  <input className="form-input" placeholder="catalogo.pdf" value={docFilename} onChange={e => setDocFilename(e.target.value)} />
+                </FormField>
+                <FormField label="Legenda (opcional)">
+                  <input className="form-input" placeholder="Segue nosso catálogo" value={docCaption} onChange={e => setDocCaption(e.target.value)} />
+                </FormField>
+              </div>
+            </>
+          )}
+
+          {/* GOTO fields */}
+          {formType === 'GOTO' && (
+            <GotoSelector
+              gotoType={gotoType}
+              gotoTarget={gotoTarget}
+              onTypeChange={setGotoType}
+              onTargetChange={setGotoTarget}
+              keywords={keywords}
+              menus={menus}
+              label="Destino do goto"
+            />
+          )}
+
+          {/* CAPTURE_VARIABLE fields */}
+          {formType === 'CAPTURE_VARIABLE' && (
+            <>
+              <div className="form-row">
+                <FormField label="Nome da variável">
+                  <input className="form-input" placeholder="Ex: cpf, email, nome" value={capName} onChange={e => setCapName(e.target.value)} />
+                </FormField>
+                <FormField label="Tipo da variável">
+                  <select className="form-input" value={capType} onChange={e => setCapType(e.target.value as CaptureVariable['type'])}>
+                    <option value="STRING">Texto (STRING)</option>
+                    <option value="NUMBER">Número (NUMBER)</option>
+                    <option value="BOOLEAN">Sim/Não (BOOLEAN)</option>
+                    <option value="DATE">Data (DATE)</option>
+                  </select>
+                </FormField>
+              </div>
+              <FormField label="Mensagem de prompt">
+                <input className="form-input" placeholder="Ex: Por favor, digite seu CPF" value={capPrompt} onChange={e => setCapPrompt(e.target.value)} />
+              </FormField>
+              <GotoSelector
+                gotoType={capGotoType}
+                gotoTarget={capGotoTarget}
+                onTypeChange={setCapGotoType}
+                onTargetChange={setCapGotoTarget}
+                keywords={keywords}
+                menus={menus}
+                label="Goto após captura (opcional)"
+              />
+            </>
+          )}
+
+          <div className="modal__footer" style={{ marginTop: 16 }}>
+            <button type="button" className="btn btn-secondary" onClick={() => { resetForm(); setShowAdd(false); }}>Cancelar</button>
+            <button type="submit" className="btn btn-primary">
+              {editingId ? 'Salvar' : 'Adicionar'} Iteração
+            </button>
+          </div>
+        </form>
+      ) : (
+        <button className="btn btn-primary" style={{ marginBottom: 16 }} onClick={() => { resetForm(); setShowAdd(true); }}>
+          <Plus size={15} /> Nova Iteração
+        </button>
+      )}
+
+      <div className="keywords-list">
+        {loading ? (
+          <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>Carregando...</p>
+        ) : iterations.length === 0 ? (
+          <p style={{ fontSize: 13, color: 'var(--color-text-muted)', textAlign: 'center', padding: '24px 0' }}>Nenhuma iteração cadastrada.</p>
+        ) : iterations.map(iter => {
+          const typeInfo = getTypeInfo(iter.type);
+          const TypeIcon = typeInfo.icon;
+          return (
+            <div key={iter.id} className="keyword-row">
+              <div className="keyword-row__content">
+                <div className="keyword-row__trigger-line">
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <TypeIcon size={14} color={typeInfo.color} />
+                    <span className="keyword-row__trigger">{iter.name}</span>
+                  </span>
+                  <span className="badge badge-accent" style={{ fontSize: 10, marginLeft: 8 }}>{typeInfo.label}</span>
+                  <span style={{ fontSize: 11, color: 'var(--color-text-muted)', marginLeft: 8 }}>ordem: {iter.order}</span>
+                </div>
+                <div className="keyword-row__goto" style={{ color: typeInfo.color }}>
+                  {getContentPreview(iter)}
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 4 }}>
+                <button className="btn btn-icon" title="Editar" onClick={() => onEdit(iter)}>
+                  <Pencil size={14} />
+                </button>
+                <button className="keyword-row__delete" onClick={() => onDelete(iter.id)}>
+                  <Trash2 size={15} />
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </Modal>
+  );
+}
+
 // ─── Main Page ───
 export default function BotsPage() {
   const { bots, fetchBots, deleteBot, updateBot, loading } = useBotStore();
@@ -1479,6 +1838,7 @@ export default function BotsPage() {
   const [waBot, setWaBot] = useState<Bot | null>(null);
   const [emulatorBot, setEmulatorBot] = useState<Bot | null>(null);
   const [treeBot, setTreeBot] = useState<Bot | null>(null);
+  const [iterBot, setIterBot] = useState<Bot | null>(null);
 
   useEffect(() => { fetchBots(); }, [fetchBots]);
 
@@ -1561,6 +1921,10 @@ export default function BotsPage() {
                     onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#60a5fa'; }}
                     onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = ''; }}
                   ><List size={15} /></button>
+                  <button className="btn btn-icon" title="Iterações" onClick={() => setIterBot(bot)}
+                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#f59e0b'; }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = ''; }}
+                  ><Repeat size={15} /></button>
                   <button className="btn btn-icon" title="WhatsApp" onClick={() => setWaBot(bot)}
                     onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#4ade80'; }}
                     onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = ''; }}
@@ -1605,6 +1969,7 @@ export default function BotsPage() {
       <BotFormModal open={showForm} onClose={() => setShowForm(false)} bot={editBot} />
       {kwBot && <KeywordsModal open={!!kwBot} onClose={() => setKwBot(null)} bot={kwBot} />}
       {menuBot && <MenusModal open={!!menuBot} onClose={() => setMenuBot(null)} bot={menuBot} />}
+      {iterBot && <IterationsModal open={!!iterBot} onClose={() => setIterBot(null)} bot={iterBot} />}
       {waBot && <WhatsAppModal open={!!waBot} onClose={() => setWaBot(null)} bot={waBot} />}
       {emulatorBot && <WhatsAppEmulator open={!!emulatorBot} onClose={() => setEmulatorBot(null)} bot={emulatorBot} />}
       {treeBot && (

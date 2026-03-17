@@ -93,6 +93,14 @@ enum LeadTemperature {
   HOT
 }
 
+enum IterationType {
+  TEXT
+  LINK
+  DOCUMENT
+  GOTO
+  CAPTURE_VARIABLE
+}
+
 model User {
   id               String   @id @default(uuid())
   email            String   @unique
@@ -153,6 +161,7 @@ model Bot {
   broadcastLists    BroadcastList[]
   broadcasts        Broadcast[]
   leads             Lead[]
+  iterations        BotIteration[]
 
   @@map("bots")
 }
@@ -410,4 +419,22 @@ model LeadHistory {
 
   @@index([leadId])
   @@map("lead_history")
+}
+
+model BotIteration {
+  id        String        @id @default(uuid())
+  botId     String
+  name      String        // Nome amigável da iteração
+  type      IterationType // TEXT, LINK, DOCUMENT, GOTO, CAPTURE_VARIABLE
+  content   Json          // Conteúdo específico por tipo
+  order     Int           @default(0)
+  isActive  Boolean       @default(true)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  bot Bot @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@index([botId])
+  @@index([botId, order])
+  @@map("bot_iterations")
 }

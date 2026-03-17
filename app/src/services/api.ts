@@ -148,6 +148,18 @@ export interface Lead {
   history?: LeadHistoryEntry[];
 }
 
+export interface BotIteration {
+  id: string;
+  botId: string;
+  name: string;
+  type: 'TEXT' | 'LINK' | 'DOCUMENT' | 'GOTO' | 'CAPTURE_VARIABLE';
+  content: Record<string, any>;
+  order: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface LeadHistoryEntry {
   id: string;
   action: string;
@@ -595,6 +607,33 @@ class ApiService {
 
   async recalculateLead(botId: string, id: string) {
     const { data } = await this.client.post(`/bots/${botId}/leads/${id}/recalculate`);
+    return data;
+  }
+
+  // ── Iterations (Iterações) ─────────────────────────────────────────────
+
+  async getIterations(botId: string): Promise<BotIteration[]> {
+    const { data } = await this.client.get(`/bots/${botId}/iterations`);
+    return data;
+  }
+
+  async createIteration(botId: string, payload: {
+    name: string;
+    type: 'TEXT' | 'LINK' | 'DOCUMENT' | 'GOTO' | 'CAPTURE_VARIABLE';
+    content: Record<string, any>;
+    order?: number;
+  }) {
+    const { data } = await this.client.post(`/bots/${botId}/iterations`, payload);
+    return data;
+  }
+
+  async updateIteration(botId: string, iterationId: string, payload: Record<string, unknown>) {
+    const { data } = await this.client.put(`/bots/${botId}/iterations/${iterationId}`, payload);
+    return data;
+  }
+
+  async deleteIteration(botId: string, iterationId: string) {
+    const { data } = await this.client.delete(`/bots/${botId}/iterations/${iterationId}`);
     return data;
   }
 }

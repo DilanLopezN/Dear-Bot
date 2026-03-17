@@ -151,6 +151,34 @@ export class EvolutionService {
     }
   }
 
+  /** Envia mídia (imagem, documento, vídeo, áudio) */
+  async sendMediaMessage(
+    baseUrl: string,
+    apiKey: string,
+    instanceName: string,
+    to: string,
+    mediaType: 'image' | 'document' | 'video' | 'audio',
+    mediaUrl: string,
+    caption?: string,
+    filename?: string,
+  ) {
+    const client = this.getClient(baseUrl, apiKey);
+    try {
+      const response = await client.post(`/message/sendMedia/${instanceName}`, {
+        number: to,
+        mediatype: mediaType,
+        media: mediaUrl,
+        caption: caption || '',
+        fileName: filename || '',
+      });
+      this.logger.log(`Mídia (${mediaType}) enviada para ${to} via Evolution`);
+      return response.data;
+    } catch (error) {
+      this.logger.error(`Erro ao enviar mídia Evolution: ${error.message}`);
+      throw error;
+    }
+  }
+
   /** Configura webhook da instância */
   async setWebhook(
     baseUrl: string,

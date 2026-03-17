@@ -121,6 +121,36 @@ export class Dialog360Service {
     }
   }
 
+  /** Envia mídia (imagem, documento, vídeo, áudio) via WhatsApp */
+  async sendMediaMessage(
+    apiKey: string,
+    to: string,
+    mediaType: 'image' | 'document' | 'video' | 'audio',
+    mediaUrl: string,
+    caption?: string,
+    filename?: string,
+  ) {
+    const client = this.getClient(apiKey);
+    try {
+      const mediaPayload: any = { link: mediaUrl };
+      if (caption) mediaPayload.caption = caption;
+      if (filename && mediaType === 'document') mediaPayload.filename = filename;
+
+      const response = await client.post('/messages', {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to,
+        type: mediaType,
+        [mediaType]: mediaPayload,
+      });
+      this.logger.log(`Mídia (${mediaType}) enviada para ${to}`);
+      return response.data;
+    } catch (error) {
+      this.logger.error(`Erro ao enviar mídia: ${error.message}`);
+      throw error;
+    }
+  }
+
   /** Marca mensagem como lida */
   async markAsRead(apiKey: string, messageId: string) {
     const client = this.getClient(apiKey);

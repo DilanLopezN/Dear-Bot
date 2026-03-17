@@ -189,6 +189,7 @@ export class EvolutionService {
     const client = this.getClient(baseUrl, apiKey);
     try {
       await client.post(`/webhook/set/${instanceName}`, {
+        enabled: true,
         url: webhookUrl,
         webhookByEvents: false,
         webhookBase64: false,
@@ -200,7 +201,11 @@ export class EvolutionService {
       });
       this.logger.log(`Webhook configurado para instância '${instanceName}'`);
     } catch (error) {
-      this.logger.error(`Erro ao configurar webhook Evolution: ${error.message}`);
+      const detail = error.response?.data
+        ? JSON.stringify(error.response.data)
+        : error.message;
+      this.logger.error(`Erro ao configurar webhook Evolution: ${detail}`);
+      console.log('WHTSERRO', error);
       throw error;
     }
   }

@@ -41,7 +41,7 @@ function FormField({ label, error, children }: { label: string; error?: string; 
 
 // ─── Goto Selector ───
 function GotoSelector({
-  gotoType, gotoTarget, onTypeChange, onTargetChange, keywords, menus, label,
+  gotoType, gotoTarget, onTypeChange, onTargetChange, keywords, menus, label, showIteration, showLastInteraction,
 }: {
   gotoType: GotoTarget['type'] | '';
   gotoTarget: string;
@@ -50,6 +50,8 @@ function GotoSelector({
   keywords: Keyword[];
   menus: InteractiveMenu[];
   label?: string;
+  showIteration?: boolean;
+  showLastInteraction?: boolean;
 }) {
   const targets = gotoType === 'MENU'
     ? menus.filter(m => m.isActive !== false)
@@ -63,14 +65,25 @@ function GotoSelector({
       <div className="goto-selector__row">
         <select
           value={gotoType}
-          onChange={(e) => { onTypeChange(e.target.value as GotoTarget['type'] | ''); onTargetChange(''); }}
+          onChange={(e) => {
+            const val = e.target.value as GotoTarget['type'] | '';
+            onTypeChange(val);
+            // ITERATION e LAST_INTERACTION não precisam de target
+            if (val === 'ITERATION' || val === 'LAST_INTERACTION') {
+              onTargetChange('_auto');
+            } else {
+              onTargetChange('');
+            }
+          }}
           className="form-input"
         >
           <option value="">Sem goto</option>
           <option value="MENU">Goto Menu</option>
           <option value="KEYWORD">Goto Keyword</option>
+          {showIteration && <option value="ITERATION">Goto Iterações</option>}
+          {showLastInteraction && <option value="LAST_INTERACTION">Última Interação (encerrar)</option>}
         </select>
-        {gotoType ? (
+        {gotoType === 'MENU' || gotoType === 'KEYWORD' ? (
           <select value={gotoTarget} onChange={(e) => onTargetChange(e.target.value)} className="form-input">
             <option value="">Selecione...</option>
             {gotoType === 'MENU'
@@ -82,6 +95,10 @@ function GotoSelector({
                 ))
             }
           </select>
+        ) : gotoType === 'ITERATION' ? (
+          <div className="goto-selector__placeholder" style={{ color: '#f59e0b', fontSize: 12 }}>Executará todas as iterações do bot</div>
+        ) : gotoType === 'LAST_INTERACTION' ? (
+          <div className="goto-selector__placeholder" style={{ color: '#f87171', fontSize: 12 }}>Executará a última interação e encerrará</div>
         ) : (
           <div className="goto-selector__placeholder">Sem navegação</div>
         )}
@@ -104,6 +121,8 @@ function BotFormModal({ open, onClose, bot }: { open: boolean; onClose: () => vo
 
   const [initType, setInitType] = useState<GotoTarget['type'] | ''>(bot?.flowConfig?.initialInteraction?.type || '');
   const [initTarget, setInitTarget] = useState(bot?.flowConfig?.initialInteraction?.target || '');
+  const [lastType, setLastType] = useState<GotoTarget['type'] | ''>(bot?.flowConfig?.lastInteraction?.type || '');
+  const [lastTarget, setLastTarget] = useState(bot?.flowConfig?.lastInteraction?.target || '');
   const [fallbackMsg, setFallbackMsg] = useState(bot?.flowConfig?.fallback?.message || '');
   const [fallbackGotoType, setFallbackGotoType] = useState<GotoTarget['type'] | ''>(bot?.flowConfig?.fallback?.goto?.type || '');
   const [fallbackGotoTarget, setFallbackGotoTarget] = useState(bot?.flowConfig?.fallback?.goto?.target || '');
@@ -112,6 +131,8 @@ function BotFormModal({ open, onClose, bot }: { open: boolean; onClose: () => vo
     reset({ name: bot?.name || '', responseMode: bot?.responseMode || 'KEYWORDS', systemPrompt: bot?.systemPrompt || '', aiConfigId: bot?.aiConfigId || '' });
     setInitType(bot?.flowConfig?.initialInteraction?.type || '');
     setInitTarget(bot?.flowConfig?.initialInteraction?.target || '');
+    setLastType(bot?.flowConfig?.lastInteraction?.type || '');
+    setLastTarget(bot?.flowConfig?.lastInteraction?.target || '');
     setFallbackMsg(bot?.flowConfig?.fallback?.message || '');
     setFallbackGotoType(bot?.flowConfig?.fallback?.goto?.type || '');
     setFallbackGotoTarget(bot?.flowConfig?.fallback?.goto?.target || '');
@@ -132,6 +153,7 @@ function BotFormModal({ open, onClose, bot }: { open: boolean; onClose: () => vo
     try {
       const flowConfig: FlowConfig = {};
       if (initType && initTarget) flowConfig.initialInteraction = { type: initType, target: initTarget };
+      if (lastType && lastTarget) flowConfig.lastInteraction = { type: lastType, target: lastTarget };
       if (fallbackMsg.trim()) {
         flowConfig.fallback = {
           message: fallbackMsg.trim(),
@@ -184,13 +206,30 @@ function BotFormModal({ open, onClose, bot }: { open: boolean; onClose: () => vo
             <ArrowRight size={15} color="var(--color-accent)" /> Primeira interação do bot
           </label>
           <p className="bot-form__section-hint">
-            Escolha qual keyword ou menu será enviado quando o usuário iniciar a conversa.
+            Escolha qual keyword, menu ou iteração será enviado quando o usuário iniciar a conversa.
           </p>
           {bot ? (
-            <GotoSelector gotoType={initType} gotoTarget={initTarget} onTypeChange={setInitType} onTargetChange={setInitTarget} keywords={keywords} menus={menus} />
+            <GotoSelector gotoType={initType} gotoTarget={initTarget} onTypeChange={setInitType} onTargetChange={setInitTarget} keywords={keywords} menus={menus} showIteration />
           ) : (
             <p style={{ fontSize: 12, color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
               Salve o bot primeiro e depois configure a primeira interação.
+            </p>
+          )}
+        </div>
+
+        <div className="bot-form__section">
+          <label className="bot-form__section-label">
+            <ArrowRight size={15} color="#f87171" /> Última interação do bot
+          </label>
+          <p className="bot-form__section-hint">
+            Escolha qual keyword, menu ou iteração será enviado como despedida. Ao finalizar, o bot encerra o canal com o contato.
+            O diálogo só reinicia se o contato enviar uma nova mensagem.
+          </p>
+          {bot ? (
+            <GotoSelector gotoType={lastType} gotoTarget={lastTarget} onTypeChange={setLastType} onTargetChange={setLastTarget} keywords={keywords} menus={menus} showIteration />
+          ) : (
+            <p style={{ fontSize: 12, color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
+              Salve o bot primeiro e depois configure a última interação.
             </p>
           )}
         </div>
@@ -205,7 +244,7 @@ function BotFormModal({ open, onClose, bot }: { open: boolean; onClose: () => vo
             <input value={fallbackMsg} onChange={(e) => setFallbackMsg(e.target.value)} placeholder="Desculpe, ocorreu um erro..." className="form-input" />
           </FormField>
           {bot && (
-            <GotoSelector gotoType={fallbackGotoType} gotoTarget={fallbackGotoTarget} onTypeChange={setFallbackGotoType} onTargetChange={setFallbackGotoTarget} keywords={keywords} menus={menus} label="Goto após fallback" />
+            <GotoSelector gotoType={fallbackGotoType} gotoTarget={fallbackGotoTarget} onTypeChange={setFallbackGotoType} onTargetChange={setFallbackGotoTarget} keywords={keywords} menus={menus} label="Goto após fallback" showIteration showLastInteraction />
           )}
         </div>
 
@@ -285,7 +324,7 @@ function KeywordsModal({ open, onClose, bot }: { open: boolean; onClose: () => v
           <input {...register('trigger', { required: true })} placeholder="Palavra-chave" className="form-input" style={{ flex: 1 }} />
           <input {...register('response', { required: true })} placeholder="Resposta do bot" className="form-input" style={{ flex: 1 }} />
         </div>
-        <GotoSelector gotoType={gotoType} gotoTarget={gotoTarget} onTypeChange={setGotoType} onTargetChange={setGotoTarget} keywords={keywords} menus={menus} label="Goto (navegação após resposta)" />
+        <GotoSelector gotoType={gotoType} gotoTarget={gotoTarget} onTypeChange={setGotoType} onTargetChange={setGotoTarget} keywords={keywords} menus={menus} label="Goto (navegação após resposta)" showIteration showLastInteraction />
 
         <div className="capture-section">
           <label className="capture-toggle">
@@ -490,7 +529,7 @@ function MenusModal({ open, onClose, bot }: { open: boolean; onClose: () => void
                 <Plus size={15} />
               </button>
             </div>
-            <GotoSelector gotoType={optGotoType} gotoTarget={optGotoTarget} onTypeChange={setOptGotoType} onTargetChange={setOptGotoTarget} keywords={keywords} menus={menus} label="Goto da opção (navegação após seleção)" />
+            <GotoSelector gotoType={optGotoType} gotoTarget={optGotoTarget} onTypeChange={setOptGotoType} onTargetChange={setOptGotoTarget} keywords={keywords} menus={menus} label="Goto da opção (navegação após seleção)" showIteration showLastInteraction />
             <div className="option-builder__list">
               {options.map((opt, i) => (
                 <div key={opt.id} className="option-builder__item">
@@ -807,7 +846,7 @@ function WhatsAppModal({ open, onClose, bot }: { open: boolean; onClose: () => v
 interface TreeNode {
   id: string;
   label: string;
-  type: 'initial' | 'keyword' | 'menu' | 'option' | 'fallback';
+  type: 'initial' | 'keyword' | 'menu' | 'option' | 'fallback' | 'iteration' | 'close';
   children: TreeNode[];
   gotoLabel?: string;
   entityId?: string;
@@ -850,6 +889,17 @@ function buildFlowTree(bot: Bot, keywords: Keyword[], menus: InteractiveMenu[]):
       if (kw.goto) { const child = resolveGoto(kw.goto, depth + 1, nextPath); if (child) kwNode.children.push(child); }
       return kwNode;
     }
+    if (goto.type === 'ITERATION') {
+      return { id: `iteration_d${depth}`, label: 'Iterações do bot', type: 'iteration', children: [] };
+    }
+    if (goto.type === 'LAST_INTERACTION') {
+      const lastNode: TreeNode = { id: `last_interaction_d${depth}`, label: 'Última Interação (encerrar)', type: 'close', children: [] };
+      if (bot.flowConfig?.lastInteraction) {
+        const child = resolveGoto(bot.flowConfig.lastInteraction, depth + 1, nextPath);
+        if (child) lastNode.children.push(child);
+      }
+      return lastNode;
+    }
     return null;
   };
 
@@ -859,6 +909,13 @@ function buildFlowTree(bot: Bot, keywords: Keyword[], menus: InteractiveMenu[]):
   if (flow?.initialInteraction) {
     const initNode = resolveGoto(flow.initialInteraction, 0, new Set());
     if (initNode) root.children.push(initNode);
+  }
+
+  if (flow?.lastInteraction) {
+    const lastNode: TreeNode = { id: 'last_interaction', label: 'Última Interação (encerrar)', type: 'close', children: [] };
+    const child = resolveGoto(flow.lastInteraction, 0, new Set());
+    if (child) lastNode.children.push(child);
+    root.children.push(lastNode);
   }
 
   const referencedKeywords = new Set<string>();
@@ -909,6 +966,8 @@ function TreeNodeView({ node, depth = 0, onNodeClick }: { node: TreeNode; depth?
     menu: <List size={12} />,
     option: <ChevronRight size={12} />,
     fallback: <ArrowRight size={12} />,
+    iteration: <Repeat size={12} />,
+    close: <PowerOff size={12} />,
   };
 
   const isClickable = onNodeClick && node.type !== 'initial';
@@ -948,9 +1007,9 @@ function TreeNodeView({ node, depth = 0, onNodeClick }: { node: TreeNode; depth?
   );
 }
 
-function FlowTreeModal({ open, onClose, bot, onEditKeyword, onEditMenu, onEditBot }: {
+function FlowTreeModal({ open, onClose, bot, onEditKeyword, onEditMenu, onEditBot, onEditIteration }: {
   open: boolean; onClose: () => void; bot: Bot;
-  onEditKeyword?: () => void; onEditMenu?: () => void; onEditBot?: () => void;
+  onEditKeyword?: () => void; onEditMenu?: () => void; onEditBot?: () => void; onEditIteration?: () => void;
 }) {
   const [keywords, setKeywords] = useState<Keyword[]>([]);
   const [menus, setMenus] = useState<InteractiveMenu[]>([]);
@@ -978,9 +1037,12 @@ function FlowTreeModal({ open, onClose, bot, onEditKeyword, onEditMenu, onEditBo
     } else if (node.type === 'menu' || node.type === 'option') {
       onClose();
       onEditMenu?.();
-    } else if (node.type === 'fallback') {
+    } else if (node.type === 'fallback' || node.type === 'close') {
       onClose();
       onEditBot?.();
+    } else if (node.type === 'iteration') {
+      onClose();
+      onEditIteration?.();
     }
   };
 
@@ -1050,6 +1112,8 @@ function WhatsAppEmulator({ open, onClose, bot }: { open: boolean; onClose: () =
   const [pendingCapture, setPendingCapture] = useState<PendingCaptureState | null>(null);
   const [showContextPanel, setShowContextPanel] = useState(false);
   const [flowStepIndex, setFlowStepIndex] = useState(0);
+  const [conversationClosed, setConversationClosed] = useState(false);
+  const [iterations, setIterations] = useState<BotIteration[]>([]);
 
   const resetConversation = () => {
     setMessages([]);
@@ -1058,14 +1122,15 @@ function WhatsAppEmulator({ open, onClose, bot }: { open: boolean; onClose: () =
     setVariables({});
     setPendingCapture(null);
     setFlowStepIndex(0);
+    setConversationClosed(false);
   };
 
   useEffect(() => {
     if (open) {
       resetConversation();
-      Promise.all([api.getKeywords(bot.id), api.getMenus(bot.id)])
-        .then(([kws, mns]) => { setKeywords(kws); setMenus(mns); })
-        .catch(() => { setKeywords([]); setMenus([]); });
+      Promise.all([api.getKeywords(bot.id), api.getMenus(bot.id), api.getIterations(bot.id)])
+        .then(([kws, mns, iters]) => { setKeywords(kws); setMenus(mns); setIterations(iters.filter((i: BotIteration) => i.isActive)); })
+        .catch(() => { setKeywords([]); setMenus([]); setIterations([]); });
     }
   }, [open, bot.id]);
 
@@ -1163,7 +1228,54 @@ function WhatsAppEmulator({ open, onClose, bot }: { open: boolean; onClose: () =
     }, 400);
   };
 
-  const executeGoto = (goto: GotoTarget, depth = 0) => {
+  const executeIterationsInEmulator = (closeAfter = false, depth = 0) => {
+    const sorted = [...iterations].sort((a, b) => a.order - b.order);
+    let delay = 0;
+    for (const iter of sorted) {
+      const c = iter.content as any;
+      delay += 400;
+      const currentDelay = delay;
+      switch (iter.type) {
+        case 'TEXT':
+          setTimeout(() => addBotMessage(c.message || ''), currentDelay + depth * 300);
+          break;
+        case 'LINK': {
+          const linkText = c.title ? `${c.title}\n${c.url}` : c.url;
+          setTimeout(() => addBotMessage(linkText || ''), currentDelay + depth * 300);
+          break;
+        }
+        case 'DOCUMENT':
+          setTimeout(() => addBotMessage(`[${c.mediaType || 'document'}] ${c.caption || c.url || ''}`), currentDelay + depth * 300);
+          break;
+        case 'GOTO':
+          if (c.type && c.target) {
+            setTimeout(() => executeGoto({ type: c.type, target: c.target }, depth + 1), currentDelay + depth * 300);
+          }
+          break;
+        case 'CAPTURE_VARIABLE':
+          if (c.promptMessage) {
+            const captureConfig: CaptureVariable = { name: c.name, type: c.variableType || 'STRING', promptMessage: c.promptMessage };
+            const gotoAfter = c.goto ? { type: c.goto.type, target: c.goto.target } as GotoTarget : undefined;
+            setTimeout(() => startCapture(captureConfig, gotoAfter), currentDelay + depth * 300);
+          }
+          return; // Stop chain, waiting for input
+        case 'CLOSE_CONVERSATION':
+          setTimeout(() => {
+            addBotMessage(c.message || 'Atendimento encerrado. Obrigado pelo contato!');
+            setConversationClosed(true);
+          }, currentDelay + depth * 300);
+          return; // Stop chain
+      }
+    }
+    if (closeAfter) {
+      setTimeout(() => {
+        addBotMessage('Conversa encerrada.');
+        setConversationClosed(true);
+      }, delay + 400 + depth * 300);
+    }
+  };
+
+  const executeGoto = (goto: GotoTarget, depth = 0, closeAfter = false) => {
     if (depth > 5) return;
     setTimeout(() => {
       if (goto.type === 'MENU') {
@@ -1172,6 +1284,7 @@ function WhatsAppEmulator({ open, onClose, bot }: { open: boolean; onClose: () =
           const text = `📋 ${menu.title}\n${menu.body || ''}\n\n${(menu.options || []).map((o, i) => `${i + 1}. ${o.title}${o.description ? ' - ' + o.description : ''}`).join('\n')}${menu.footer ? '\n\n' + menu.footer : ''}`;
           addBotMessage(text, true, menu.options);
           if (menu.captureVariable) startCapture(menu.captureVariable);
+          if (closeAfter) { setTimeout(() => { setConversationClosed(true); }, 500); }
         } else { addBotMessage(`Menu "${goto.target}" não encontrado.`); }
       } else if (goto.type === 'KEYWORD') {
         const kw = findKeywordByTrigger(goto.target);
@@ -1180,9 +1293,20 @@ function WhatsAppEmulator({ open, onClose, bot }: { open: boolean; onClose: () =
           if (kw.captureVariable) {
             startCapture(kw.captureVariable, kw.goto);
           } else if (kw.goto) {
-            executeGoto(kw.goto, depth + 1);
+            executeGoto(kw.goto, depth + 1, closeAfter);
+          } else if (closeAfter) {
+            setTimeout(() => { setConversationClosed(true); }, 500);
           }
         } else { addBotMessage(`Keyword "${goto.target}" não encontrada.`); }
+      } else if (goto.type === 'ITERATION') {
+        executeIterationsInEmulator(closeAfter, depth);
+      } else if (goto.type === 'LAST_INTERACTION') {
+        if (bot.flowConfig?.lastInteraction) {
+          executeGoto(bot.flowConfig.lastInteraction, depth + 1, true);
+        } else {
+          addBotMessage('Atendimento encerrado. Obrigado pelo contato!');
+          setConversationClosed(true);
+        }
       }
     }, 400 + depth * 300);
   };
@@ -1191,6 +1315,16 @@ function WhatsAppEmulator({ open, onClose, bot }: { open: boolean; onClose: () =
     const msgText = text || input.trim();
     if (!msgText) return;
     if (!text) setInput('');
+
+    // Se conversa encerrada, reabrir como nova
+    if (conversationClosed) {
+      setConversationClosed(false);
+      setVariables({});
+      setPendingCapture(null);
+      setFlowStepIndex(0);
+      setInitialized(false);
+    }
+
     const isFirst = !initialized;
     setInitialized(true);
 
@@ -1308,6 +1442,9 @@ function WhatsAppEmulator({ open, onClose, bot }: { open: boolean; onClose: () =
                     <span className="wa-emulator__empty-tag">{keywords.length} keyword{keywords.length !== 1 ? 's' : ''}</span>
                   )}
                   <span className="wa-emulator__empty-tag">{menus.length} menu{menus.length !== 1 ? 's' : ''}</span>
+                  {iterations.length > 0 && (
+                    <span className="wa-emulator__empty-tag">{iterations.length} iteraç{iterations.length !== 1 ? 'ões' : 'ão'}</span>
+                  )}
                 </div>
               </div>
             )}
@@ -1388,7 +1525,9 @@ function WhatsAppEmulator({ open, onClose, bot }: { open: boolean; onClose: () =
               <div className="wa-emulator__context-info">
                 <div className="wa-emulator__context-row">
                   <span className="wa-emulator__context-label">Status</span>
-                  <span className="wa-emulator__context-value">BOT</span>
+                  <span className="wa-emulator__context-value" style={conversationClosed ? { color: '#f87171' } : undefined}>
+                    {conversationClosed ? 'CLOSED' : 'BOT'}
+                  </span>
                 </div>
                 <div className="wa-emulator__context-row">
                   <span className="wa-emulator__context-label">Modo</span>
@@ -1401,6 +1540,10 @@ function WhatsAppEmulator({ open, onClose, bot }: { open: boolean; onClose: () =
                 <div className="wa-emulator__context-row">
                   <span className="wa-emulator__context-label">Etapa fluxo</span>
                   <span className="wa-emulator__context-value">{flowStepIndex}</span>
+                </div>
+                <div className="wa-emulator__context-row">
+                  <span className="wa-emulator__context-label">Iterações</span>
+                  <span className="wa-emulator__context-value">{iterations.length} ativa{iterations.length !== 1 ? 's' : ''}</span>
                 </div>
               </div>
             </div>
@@ -1459,12 +1602,19 @@ function WhatsAppEmulator({ open, onClose, bot }: { open: boolean; onClose: () =
 function buildFlowPreview(bot: Bot): string[] {
   const preview: string[] = [];
   const flow = bot.flowConfig;
-  if (flow?.initialInteraction) preview.push(`inicio → ${flow.initialInteraction.type.toLowerCase()}: ${flow.initialInteraction.target}`);
+  if (flow?.initialInteraction) {
+    const label = flow.initialInteraction.type === 'ITERATION' ? 'iterações' : `${flow.initialInteraction.type.toLowerCase()}: ${flow.initialInteraction.target}`;
+    preview.push(`inicio → ${label}`);
+  }
   else if (bot.initialMessage?.trim()) preview.push(`inicio: ${bot.initialMessage.trim()}`);
   const steps = flow?.steps || [];
   for (const step of steps) {
     if (step.type === 'GOTO_MENU' && step.menuTrigger) preview.push(`goto menu: ${step.menuTrigger}`);
     if (step.type === 'GOTO_KEYWORD' && step.keywordTrigger) preview.push(`goto keyword: ${step.keywordTrigger}`);
+  }
+  if (flow?.lastInteraction) {
+    const label = flow.lastInteraction.type === 'ITERATION' ? 'iterações' : `${flow.lastInteraction.type.toLowerCase()}: ${flow.lastInteraction.target}`;
+    preview.push(`última → ${label} (encerrar)`);
   }
   if (flow?.fallback?.goto) preview.push(`fallback → ${flow.fallback.goto.type.toLowerCase()}: ${flow.fallback.goto.target}`);
   return preview;
@@ -1477,6 +1627,7 @@ const ITERATION_TYPES = [
   { value: 'DOCUMENT', label: 'Documento', icon: File, color: '#f59e0b' },
   { value: 'GOTO', label: 'Goto', icon: ArrowRight, color: '#c084fc' },
   { value: 'CAPTURE_VARIABLE', label: 'Capturar Variável', icon: Variable, color: '#f472b6' },
+  { value: 'CLOSE_CONVERSATION', label: 'Encerramento', icon: PowerOff, color: '#f87171' },
 ] as const;
 
 function IterationsModal({ open, onClose, bot }: { open: boolean; onClose: () => void; bot: Bot }) {
@@ -1516,6 +1667,9 @@ function IterationsModal({ open, onClose, bot }: { open: boolean; onClose: () =>
   const [capGotoType, setCapGotoType] = useState<GotoTarget['type'] | ''>('');
   const [capGotoTarget, setCapGotoTarget] = useState('');
 
+  // CLOSE_CONVERSATION content
+  const [closeMessage, setCloseMessage] = useState('Atendimento encerrado. Obrigado pelo contato!');
+
   const resetForm = () => {
     setFormName('');
     setFormType('TEXT');
@@ -1534,6 +1688,7 @@ function IterationsModal({ open, onClose, bot }: { open: boolean; onClose: () =>
     setCapPrompt('');
     setCapGotoType('');
     setCapGotoTarget('');
+    setCloseMessage('Atendimento encerrado. Obrigado pelo contato!');
     setEditingId(null);
   };
 
@@ -1570,6 +1725,8 @@ function IterationsModal({ open, onClose, bot }: { open: boolean; onClose: () =>
           promptMessage: capPrompt,
           goto: capGotoType && capGotoTarget ? { type: capGotoType, target: capGotoTarget } : undefined,
         };
+      case 'CLOSE_CONVERSATION':
+        return { message: closeMessage };
       default:
         return {};
     }
@@ -1645,6 +1802,9 @@ function IterationsModal({ open, onClose, bot }: { open: boolean; onClose: () =>
         setCapGotoType(c.goto?.type || '');
         setCapGotoTarget(c.goto?.target || '');
         break;
+      case 'CLOSE_CONVERSATION':
+        setCloseMessage(c.message || 'Atendimento encerrado. Obrigado pelo contato!');
+        break;
     }
   };
 
@@ -1658,6 +1818,7 @@ function IterationsModal({ open, onClose, bot }: { open: boolean; onClose: () =>
       case 'DOCUMENT': return `${c.mediaType || 'document'}: ${c.filename || c.url || ''}`;
       case 'GOTO': return `${(c.type || '').toLowerCase()}: ${c.target || ''}`;
       case 'CAPTURE_VARIABLE': return `${c.name} (${c.variableType || 'STRING'})`;
+      case 'CLOSE_CONVERSATION': return c.message?.substring(0, 60) || 'Encerrar conversa';
       default: return '';
     }
   };
@@ -1742,6 +1903,8 @@ function IterationsModal({ open, onClose, bot }: { open: boolean; onClose: () =>
               keywords={keywords}
               menus={menus}
               label="Destino do goto"
+              showIteration
+              showLastInteraction
             />
           )}
 
@@ -1772,8 +1935,23 @@ function IterationsModal({ open, onClose, bot }: { open: boolean; onClose: () =>
                 keywords={keywords}
                 menus={menus}
                 label="Goto após captura (opcional)"
+                showIteration
+                showLastInteraction
               />
             </>
+          )}
+
+          {/* CLOSE_CONVERSATION fields */}
+          {formType === 'CLOSE_CONVERSATION' && (
+            <FormField label="Mensagem de encerramento">
+              <textarea
+                className="form-input form-textarea"
+                placeholder="Mensagem enviada ao encerrar a conversa"
+                rows={3}
+                value={closeMessage}
+                onChange={e => setCloseMessage(e.target.value)}
+              />
+            </FormField>
           )}
 
           <div className="modal__footer" style={{ marginTop: 16 }}>
@@ -1980,6 +2158,7 @@ export default function BotsPage() {
           onEditKeyword={() => setKwBot(treeBot)}
           onEditMenu={() => setMenuBot(treeBot)}
           onEditBot={() => { setEditBot(treeBot); setShowForm(true); }}
+          onEditIteration={() => setIterBot(treeBot)}
         />
       )}
     </div>

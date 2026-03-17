@@ -32,7 +32,7 @@ export interface MonthlyMetric {
 }
 
 export interface GotoTarget {
-  type: 'MENU' | 'KEYWORD';
+  type: 'MENU' | 'KEYWORD' | 'ITERATION' | 'LAST_INTERACTION';
   target: string;
 }
 
@@ -69,6 +69,7 @@ export interface FlowStep {
 
 export interface FlowConfig {
   initialInteraction?: GotoTarget;
+  lastInteraction?: GotoTarget;
   steps?: FlowStep[];
   fallback?: {
     message: string;
@@ -152,7 +153,7 @@ export interface BotIteration {
   id: string;
   botId: string;
   name: string;
-  type: 'TEXT' | 'LINK' | 'DOCUMENT' | 'GOTO' | 'CAPTURE_VARIABLE';
+  type: 'TEXT' | 'LINK' | 'DOCUMENT' | 'GOTO' | 'CAPTURE_VARIABLE' | 'CLOSE_CONVERSATION';
   content: Record<string, any>;
   order: number;
   isActive: boolean;
@@ -619,7 +620,7 @@ class ApiService {
 
   async createIteration(botId: string, payload: {
     name: string;
-    type: 'TEXT' | 'LINK' | 'DOCUMENT' | 'GOTO' | 'CAPTURE_VARIABLE';
+    type: 'TEXT' | 'LINK' | 'DOCUMENT' | 'GOTO' | 'CAPTURE_VARIABLE' | 'CLOSE_CONVERSATION';
     content: Record<string, any>;
     order?: number;
   }) {

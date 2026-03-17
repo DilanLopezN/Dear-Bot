@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "IterationType" ADD VALUE 'CLOSE_CONVERSATION';

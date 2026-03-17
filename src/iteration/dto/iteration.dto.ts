@@ -6,6 +6,7 @@ export enum IterationTypeDto {
   DOCUMENT = 'DOCUMENT',
   GOTO = 'GOTO',
   CAPTURE_VARIABLE = 'CAPTURE_VARIABLE',
+  CLOSE_CONVERSATION = 'CLOSE_CONVERSATION',
 }
 
 export class CreateIterationDto {

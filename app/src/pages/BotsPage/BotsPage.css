@@ -419,6 +419,18 @@
   border-color: rgba(251, 146, 60, 0.2);
 }
 
+.flow-tree__label--iteration {
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.08);
+  border-color: rgba(245, 158, 11, 0.2);
+}
+
+.flow-tree__label--close {
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.08);
+  border-color: rgba(248, 113, 113, 0.2);
+}
+
 .flow-tree__goto-badge {
   font-size: 10px;
   color: #60a5fa;

@@ -99,6 +99,7 @@ enum IterationType {
   DOCUMENT
   GOTO
   CAPTURE_VARIABLE
+  CLOSE_CONVERSATION
 }
 
 model User {

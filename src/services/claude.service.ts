@@ -17,6 +17,7 @@ export class ClaudeService {
     model?: string,
     maxTokens?: number,
     temperature?: number,
+    knowledgeContext?: string,
   ): Promise<string> {
     if (!apiKey) {
       return 'Claude API key não configurada. Configure nas configurações de I.A.';
@@ -44,7 +45,7 @@ export class ClaudeService {
         model: model || 'claude-sonnet-4-20250514',
         max_tokens: maxTokens || 1024,
         temperature: temperature ?? 0.7,
-        system: systemPrompt || 'Você é um assistente de atendimento ao cliente. Responda de forma educada, objetiva e útil. Responda no idioma do cliente.',
+        system: finalSystemPrompt,
         messages,
       });
 

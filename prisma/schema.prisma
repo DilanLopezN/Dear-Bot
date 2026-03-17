@@ -163,6 +163,7 @@ model Bot {
   broadcasts        Broadcast[]
   leads             Lead[]
   iterations        BotIteration[]
+  knowledge         BotKnowledge[]
 
   @@map("bots")
 }
@@ -420,6 +421,37 @@ model LeadHistory {
 
   @@index([leadId])
   @@map("lead_history")
+}
+
+model BotKnowledge {
+  id          String   @id @default(uuid())
+  botId       String
+  fileName    String
+  fileType    String   // pdf, txt, csv, xlsx
+  fileSize    Int      // bytes
+  totalChunks Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  bot    Bot              @relation(fields: [botId], references: [id], onDelete: Cascade)
+  chunks KnowledgeChunk[]
+
+  @@index([botId])
+  @@map("bot_knowledge")
+}
+
+model KnowledgeChunk {
+  id          String   @id @default(uuid())
+  knowledgeId String
+  content     String   @db.Text
+  chunkIndex  Int
+  wordCount   Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  knowledge BotKnowledge @relation(fields: [knowledgeId], references: [id], onDelete: Cascade)
+
+  @@index([knowledgeId])
+  @@map("knowledge_chunks")
 }
 
 model BotIteration {

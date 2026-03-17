@@ -16,6 +16,7 @@ export class OpenAIService {
     model?: string,
     maxTokens?: number,
     temperature?: number,
+    knowledgeContext?: string,
   ): Promise<string> {
     if (!apiKey) {
       return 'OpenAI API key não configurada. Configure nas configurações de I.A.';
@@ -30,10 +31,15 @@ export class OpenAIService {
         take: 20,
       });
 
+      let finalSystemPrompt = systemPrompt || 'Você é um assistente de atendimento ao cliente. Responda de forma educada, objetiva e útil. Responda no idioma do cliente.';
+      if (knowledgeContext) {
+        finalSystemPrompt += `\n\n## Base de Conhecimento\nUse as informações abaixo para responder às perguntas do usuário. Baseie suas respostas neste conhecimento quando relevante:\n\n${knowledgeContext}`;
+      }
+
       const messages: OpenAI.ChatCompletionMessageParam[] = [
         {
           role: 'system',
-          content: systemPrompt || 'Você é um assistente de atendimento ao cliente. Responda de forma educada, objetiva e útil. Responda no idioma do cliente.',
+          content: finalSystemPrompt,
         },
         ...history.map((msg) => ({
           role: (msg.direction === 'INBOUND' ? 'user' : 'assistant') as 'user' | 'assistant',

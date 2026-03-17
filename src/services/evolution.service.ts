@@ -1,5 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
-import axios, { AxiosInstance } from 'axios';
+import { Injectable, Logger } from "@nestjs/common";
+import axios, { AxiosInstance } from "axios";
 
 @Injectable()
 export class EvolutionService {
@@ -10,7 +10,7 @@ export class EvolutionService {
       baseURL: baseUrl,
       headers: {
         apikey: apiKey,
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
     });
   }
@@ -24,19 +24,15 @@ export class EvolutionService {
   ) {
     const client = this.getClient(baseUrl, apiKey);
     try {
-      const response = await client.post('/instance/create', {
+      const response = await client.post("/instance/create", {
         instanceName,
-        integration: 'WHATSAPP-BAILEYS',
+        integration: "WHATSAPP-BAILEYS",
         qrcode: true,
         webhook: {
           url: webhookUrl,
           byEvents: false,
           base64: false,
-          events: [
-            'MESSAGES_UPSERT',
-            'MESSAGES_UPDATE',
-            'CONNECTION_UPDATE',
-          ],
+          events: ["MESSAGES_UPSERT", "MESSAGES_UPDATE", "CONNECTION_UPDATE"],
         },
       });
       this.logger.log(`Instância '${instanceName}' criada`);
@@ -60,13 +56,21 @@ export class EvolutionService {
   }
 
   /** Verifica o estado da conexão */
-  async getConnectionState(baseUrl: string, apiKey: string, instanceName: string) {
+  async getConnectionState(
+    baseUrl: string,
+    apiKey: string,
+    instanceName: string,
+  ) {
     const client = this.getClient(baseUrl, apiKey);
     try {
-      const response = await client.get(`/instance/connectionState/${instanceName}`);
+      const response = await client.get(
+        `/instance/connectionState/${instanceName}`,
+      );
       return response.data;
     } catch (error) {
-      this.logger.error(`Erro ao verificar estado da conexão: ${error.message}`);
+      this.logger.error(
+        `Erro ao verificar estado da conexão: ${error.message}`,
+      );
       throw error;
     }
   }
@@ -114,14 +118,16 @@ export class EvolutionService {
         number: to,
         title,
         description,
-        footerText: footer || '',
+        footerText: footer || "",
         buttonText,
         sections,
       });
       this.logger.log(`Menu interativo enviado para ${to} via Evolution`);
       return response.data;
     } catch (error) {
-      this.logger.error(`Erro ao enviar menu interativo Evolution: ${error.message}`);
+      this.logger.error(
+        `Erro ao enviar menu interativo Evolution: ${error.message}`,
+      );
       throw error;
     }
   }
@@ -137,12 +143,15 @@ export class EvolutionService {
   ) {
     const client = this.getClient(baseUrl, apiKey);
     try {
-      const response = await client.post(`/message/sendButtons/${instanceName}`, {
-        number: to,
-        title: '',
-        description: body,
-        buttons,
-      });
+      const response = await client.post(
+        `/message/sendButtons/${instanceName}`,
+        {
+          number: to,
+          title: "",
+          description: body,
+          buttons,
+        },
+      );
       this.logger.log(`Botões interativos enviados para ${to} via Evolution`);
       return response.data;
     } catch (error) {
@@ -157,7 +166,7 @@ export class EvolutionService {
     apiKey: string,
     instanceName: string,
     to: string,
-    mediaType: 'image' | 'document' | 'video' | 'audio',
+    mediaType: "image" | "document" | "video" | "audio",
     mediaUrl: string,
     caption?: string,
     filename?: string,
@@ -168,8 +177,8 @@ export class EvolutionService {
         number: to,
         mediatype: mediaType,
         media: mediaUrl,
-        caption: caption || '',
-        fileName: filename || '',
+        caption: caption || "",
+        fileName: filename || "",
       });
       this.logger.log(`Mídia (${mediaType}) enviada para ${to} via Evolution`);
       return response.data;
@@ -189,15 +198,13 @@ export class EvolutionService {
     const client = this.getClient(baseUrl, apiKey);
     try {
       await client.post(`/webhook/set/${instanceName}`, {
-        enabled: true,
-        url: webhookUrl,
-        webhookByEvents: false,
-        webhookBase64: false,
-        events: [
-          'MESSAGES_UPSERT',
-          'MESSAGES_UPDATE',
-          'CONNECTION_UPDATE',
-        ],
+        webhook: {
+          enabled: true,
+          url: webhookUrl,
+          webhookByEvents: false,
+          webhookBase64: false,
+          events: ["MESSAGES_UPSERT", "MESSAGES_UPDATE", "CONNECTION_UPDATE"],
+        },
       });
       this.logger.log(`Webhook configurado para instância '${instanceName}'`);
     } catch (error) {
@@ -205,7 +212,7 @@ export class EvolutionService {
         ? JSON.stringify(error.response.data)
         : error.message;
       this.logger.error(`Erro ao configurar webhook Evolution: ${detail}`);
-      console.log('WHTSERRO', error);
+      console.log("WHTSERRO", error);
       throw error;
     }
   }

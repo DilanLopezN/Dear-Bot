@@ -40,13 +40,15 @@ export class ClaudeService {
       // Adiciona mensagem atual
       messages.push({ role: 'user', content: userMessage });
 
-      const response = await client.messages.create({
+      const stream = client.messages.stream({
         model: model || 'claude-sonnet-4-20250514',
         max_tokens: maxTokens || 1024,
         temperature: temperature ?? 0.7,
         system: systemPrompt || 'Você é um assistente de atendimento ao cliente. Responda de forma educada, objetiva e útil. Responda no idioma do cliente.',
         messages,
       });
+
+      const response = await stream.finalMessage();
 
       const textBlock = response.content.find((b) => b.type === 'text');
       return textBlock?.text || 'Desculpe, não consegui gerar uma resposta.';

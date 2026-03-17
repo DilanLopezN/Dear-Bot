@@ -8,10 +8,11 @@ import { MenuModule } from '../menu/menu.module';
 import { ContactModule } from '../contact/contact.module';
 import { LeadModule } from '../lead/lead.module';
 import { IterationModule } from '../iteration/iteration.module';
+import { KnowledgeModule } from '../knowledge/knowledge.module';
 import { ContextCacheService } from './context-cache.service';
 
 @Module({
-  imports: [ConversationModule, KeywordModule, ServicesModule, MenuModule, ContactModule, LeadModule, IterationModule],
+  imports: [ConversationModule, KeywordModule, ServicesModule, MenuModule, ContactModule, LeadModule, IterationModule, KnowledgeModule],
   controllers: [WebhookController],
   providers: [WebhookService, ContextCacheService],
 })

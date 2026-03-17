@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { useBotStore, type Bot } from '@/stores/bot.store';
-import { api, extractApiError, type InteractiveMenu, type MenuOption, type FlowConfig, type GotoTarget, type Keyword, type CaptureVariable, type BotIteration } from '@/services/api';
+import { api, extractApiError, type InteractiveMenu, type MenuOption, type FlowConfig, type GotoTarget, type Keyword, type CaptureVariable, type BotIteration, type BotKnowledge } from '@/services/api';
 import { toast } from 'sonner';
 import {
   Plus, Trash2, Pencil, Zap, Key, X, Power, PowerOff,
@@ -9,7 +9,7 @@ import {
   Play, ArrowLeft, Check, CheckCheck, List, Cpu,
   GitBranch, ChevronRight, ArrowRight, Database, RotateCcw, Copy,
   Repeat, FileText, Link as LinkIcon, File, Variable,
-  GripVertical,
+  GripVertical, BookOpen, Upload,
 } from 'lucide-react';
 import './BotsPage.css';
 
@@ -2215,6 +2215,164 @@ function IterationsModal({ open, onClose, bot }: { open: boolean; onClose: () =>
 }
 
 // ─── Main Page ───
+// ─── Knowledge Modal (Conhecimento IA) ───
+function KnowledgeModal({ open, onClose, bot }: { open: boolean; onClose: () => void; bot: Bot }) {
+  const [docs, setDocs] = useState<BotKnowledge[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const loadDocs = async () => {
+    setLoading(true);
+    try {
+      const data = await api.getKnowledge(bot.id);
+      setDocs(data);
+    } catch (err) {
+      toast.error(`Erro ao carregar conhecimento: ${extractApiError(err)}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (open) loadDocs();
+  }, [open, bot.id]);
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const allowedTypes = ['.pdf', '.txt', '.csv', '.xlsx', '.xls'];
+    const ext = '.' + file.name.split('.').pop()?.toLowerCase();
+    if (!allowedTypes.includes(ext)) {
+      toast.error(`Tipo de arquivo não suportado. Use: ${allowedTypes.join(', ')}`);
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('Arquivo muito grande. O tamanho máximo é 10MB.');
+      return;
+    }
+
+    setUploading(true);
+    try {
+      await api.uploadKnowledge(bot.id, file);
+      toast.success(`"${file.name}" processado com sucesso!`);
+      await loadDocs();
+    } catch (err) {
+      toast.error(`Erro ao enviar arquivo: ${extractApiError(err)}`);
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleDelete = async (doc: BotKnowledge) => {
+    try {
+      await api.deleteKnowledge(bot.id, doc.id);
+      toast.success(`"${doc.fileName}" removido!`);
+      setDocs((prev) => prev.filter((d) => d.id !== doc.id));
+    } catch (err) {
+      toast.error(`Erro ao remover: ${extractApiError(err)}`);
+    }
+  };
+
+  const formatSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  const fileTypeIcon = (type: string) => {
+    switch (type) {
+      case 'pdf': return '📄';
+      case 'txt': return '📝';
+      case 'csv': return '📊';
+      case 'xlsx': case 'xls': return '📗';
+      default: return '📁';
+    }
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title={`Conhecimento IA — ${bot.name}`} wide>
+      <div style={{ marginBottom: 16 }}>
+        <p style={{ color: 'var(--color-text-muted)', fontSize: 13, marginBottom: 12 }}>
+          Faça upload de documentos para que a I.A. aprenda e use como base de conhecimento nas respostas.
+          Formatos aceitos: PDF, TXT, CSV, Excel. Máximo 10MB por arquivo.
+        </p>
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".pdf,.txt,.csv,.xlsx,.xls"
+          onChange={handleUpload}
+          style={{ display: 'none' }}
+        />
+
+        <button
+          className="btn btn-primary"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={uploading}
+          style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+        >
+          {uploading ? <Loader2 size={15} className="spin" /> : <Upload size={15} />}
+          {uploading ? 'Processando...' : 'Enviar Documento'}
+        </button>
+      </div>
+
+      {loading ? (
+        <div style={{ textAlign: 'center', padding: 24, color: 'var(--color-text-muted)' }}>
+          <Loader2 size={20} className="spin" /> Carregando...
+        </div>
+      ) : docs.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: 24, color: 'var(--color-text-muted)' }}>
+          <BookOpen size={32} style={{ marginBottom: 8, opacity: 0.5 }} />
+          <p>Nenhum documento de conhecimento cadastrado.</p>
+          <p style={{ fontSize: 12 }}>Envie documentos para que a I.A. possa usar como referência.</p>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {docs.map((doc) => (
+            <div
+              key={doc.id}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '10px 14px',
+                background: 'var(--color-bg-elevated, #1a1a2e)',
+                borderRadius: 8,
+                border: '1px solid var(--color-border, #2a2a4a)',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
+                <span style={{ fontSize: 20 }}>{fileTypeIcon(doc.fileType)}</span>
+                <div style={{ minWidth: 0 }}>
+                  <p style={{ fontWeight: 500, fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {doc.fileName}
+                  </p>
+                  <p style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
+                    {formatSize(doc.fileSize)} &middot; {doc.totalChunks} chunks &middot; {new Date(doc.createdAt).toLocaleDateString('pt-BR')}
+                  </p>
+                </div>
+              </div>
+              <button
+                className="btn btn-icon"
+                title="Remover"
+                onClick={() => handleDelete(doc)}
+                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#f87171'; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = ''; }}
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
 export default function BotsPage() {
   const { bots, fetchBots, deleteBot, updateBot, loading } = useBotStore();
   const [showForm, setShowForm] = useState(false);
@@ -2225,6 +2383,7 @@ export default function BotsPage() {
   const [emulatorBot, setEmulatorBot] = useState<Bot | null>(null);
   const [treeBot, setTreeBot] = useState<Bot | null>(null);
   const [iterBot, setIterBot] = useState<Bot | null>(null);
+  const [knowledgeBot, setKnowledgeBot] = useState<Bot | null>(null);
 
   useEffect(() => { fetchBots(); }, [fetchBots]);
 
@@ -2311,6 +2470,10 @@ export default function BotsPage() {
                     onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#f59e0b'; }}
                     onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = ''; }}
                   ><Repeat size={15} /></button>
+                  <button className="btn btn-icon" title="Conhecimento IA" onClick={() => setKnowledgeBot(bot)}
+                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#a78bfa'; }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = ''; }}
+                  ><BookOpen size={15} /></button>
                   <button className="btn btn-icon" title="WhatsApp" onClick={() => setWaBot(bot)}
                     onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#4ade80'; }}
                     onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = ''; }}
@@ -2356,6 +2519,7 @@ export default function BotsPage() {
       {kwBot && <KeywordsModal open={!!kwBot} onClose={() => setKwBot(null)} bot={kwBot} />}
       {menuBot && <MenusModal open={!!menuBot} onClose={() => setMenuBot(null)} bot={menuBot} />}
       {iterBot && <IterationsModal open={!!iterBot} onClose={() => setIterBot(null)} bot={iterBot} />}
+      {knowledgeBot && <KnowledgeModal open={!!knowledgeBot} onClose={() => setKnowledgeBot(null)} bot={knowledgeBot} />}
       {waBot && <WhatsAppModal open={!!waBot} onClose={() => setWaBot(null)} bot={waBot} />}
       {emulatorBot && <WhatsAppEmulator open={!!emulatorBot} onClose={() => setEmulatorBot(null)} bot={emulatorBot} />}
       {treeBot && (

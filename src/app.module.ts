@@ -17,6 +17,7 @@ import { ScheduledMessageModule } from './scheduled-message/scheduled-message.mo
 import { BroadcastModule } from './broadcast/broadcast.module';
 import { LeadModule } from './lead/lead.module';
 import { IterationModule } from './iteration/iteration.module';
+import { KnowledgeModule } from './knowledge/knowledge.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { IterationModule } from './iteration/iteration.module';
     BroadcastModule,
     LeadModule,
     IterationModule,
+    KnowledgeModule,
   ],
 })
 export class AppModule {}

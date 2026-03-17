@@ -10,6 +10,7 @@ import { MessagingService, ChannelConfig } from '../services/messaging.service';
 import { ContactService } from '../contact/contact.service';
 import { LeadService } from '../lead/lead.service';
 import { IterationService } from '../iteration/iteration.service';
+import { KnowledgeService } from '../knowledge/knowledge.service';
 import { ContextCacheService } from './context-cache.service';
 import { ConversationContext, serializeContextForAI } from './conversation-context';
 import { Prisma, VariableType } from '@prisma/client';
@@ -53,6 +54,7 @@ export class WebhookService {
     private contactService: ContactService,
     private leadService: LeadService,
     private iterationService: IterationService,
+    private knowledgeService: KnowledgeService,
     private contextCache: ContextCacheService,
   ) {}
 
@@ -344,12 +346,29 @@ export class WebhookService {
     conversationId: string,
     text: string,
     context?: ConversationContext,
+    hybridFlowHint?: string,
   ): Promise<string> {
     // Enriquecer o systemPrompt com o contexto da conversa
     const basePrompt = bot.systemPrompt || 'Você é um assistente de atendimento ao cliente. Responda de forma educada, objetiva e útil. Responda no idioma do cliente.';
-    const enrichedPrompt = context
+    let enrichedPrompt = context
       ? `${basePrompt}\n\n${serializeContextForAI(context)}`
       : basePrompt;
+
+    // No modo HYBRID, adicionar instrução para guiar o usuário de volta ao fluxo
+    if (hybridFlowHint) {
+      enrichedPrompt += `\n\n## Modo Híbrido - Instrução Especial\nO usuário perguntou algo fora do fluxo do bot. Responda a pergunta do usuário de forma útil e educada, mas ao final da resposta, gentilmente guie o usuário de volta ao fluxo do atendimento. ${hybridFlowHint}`;
+    }
+
+    // Buscar conhecimento relevante via RAG
+    let knowledgeContext: string | undefined;
+    try {
+      const relevantChunks = await this.knowledgeService.searchRelevantChunks(bot.id, text, 5);
+      if (relevantChunks.length > 0) {
+        knowledgeContext = relevantChunks.join('\n\n---\n\n');
+      }
+    } catch (error) {
+      this.logger.warn(`Erro ao buscar conhecimento para bot ${bot.id}: ${error.message}`);
+    }
 
     const aiConfig = bot.aiConfig;
 
@@ -364,6 +383,7 @@ export class WebhookService {
             aiConfig.model,
             aiConfig.maxTokens,
             aiConfig.temperature,
+            knowledgeContext,
           );
         case 'GEMINI':
           return this.geminiService.generateResponse(
@@ -374,6 +394,7 @@ export class WebhookService {
             aiConfig.model,
             aiConfig.maxTokens,
             aiConfig.temperature,
+            knowledgeContext,
           );
         case 'CLAUDE':
         default:
@@ -385,6 +406,7 @@ export class WebhookService {
             aiConfig.model,
             aiConfig.maxTokens,
             aiConfig.temperature,
+            knowledgeContext,
           );
       }
     }
@@ -393,6 +415,11 @@ export class WebhookService {
       conversationId,
       text,
       enrichedPrompt,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      knowledgeContext,
     );
   }
 
@@ -941,7 +968,25 @@ export class WebhookService {
             }
             return;
           }
-          responseText = await this.generateAIResponse(bot, conversation.id, text, context);
+
+          // No modo HYBRID, a IA responde perguntas fora do fluxo e guia o usuário de volta
+          const hybridFlow = this.parseFlowConfig(bot.flowConfig);
+          let hybridFlowHint = 'Guie o usuário de volta ao atendimento.';
+
+          // Construir dica sobre o fluxo disponível para a IA
+          const availableKeywords = await this.prisma.keyword.findMany({
+            where: { botId, isActive: true },
+            select: { trigger: true },
+          });
+          if (availableKeywords.length > 0) {
+            const triggers = availableKeywords.map((k) => k.trigger).join(', ');
+            hybridFlowHint = `Os tópicos disponíveis no fluxo do bot são: ${triggers}. Sugira ao usuário que digite uma dessas opções para continuar o atendimento.`;
+          }
+          if (hybridFlow.initialInteraction) {
+            hybridFlowHint += ' Ou sugira que o usuário digite "menu" ou "início" para voltar ao menu principal.';
+          }
+
+          responseText = await this.generateAIResponse(bot, conversation.id, text, context, hybridFlowHint);
           break;
         }
       }

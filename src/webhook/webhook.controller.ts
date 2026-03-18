@@ -1,4 +1,4 @@
-import { Controller, Post, Param, Body, Logger, HttpCode } from '@nestjs/common';
+import { Controller, Post, Delete, Param, Body, Logger, HttpCode } from '@nestjs/common';
 import { WebhookService } from './webhook.service';
 
 /**
@@ -219,5 +219,31 @@ export class WebhookController {
     }
 
     return { status: 'ok' };
+  }
+
+  /** Emulador: processa mensagem pelo mesmo pipeline do WhatsApp real */
+  @Post('emulator/:botId')
+  @HttpCode(200)
+  async handleEmulatorMessage(
+    @Param('botId') botId: string,
+    @Body() body: { text: string; sessionPhone: string },
+  ) {
+    this.logger.log(`Emulador: mensagem recebida para bot ${botId} — session ${body.sessionPhone}`);
+    return this.webhookService.processEmulatorMessage(
+      botId,
+      body.text,
+      body.sessionPhone,
+    );
+  }
+
+  /** Emulador: reseta a conversa */
+  @Delete('emulator/:botId/:sessionPhone')
+  @HttpCode(200)
+  async resetEmulatorConversation(
+    @Param('botId') botId: string,
+    @Param('sessionPhone') sessionPhone: string,
+  ) {
+    this.logger.log(`Emulador: resetando conversa para bot ${botId} — session ${sessionPhone}`);
+    return this.webhookService.resetEmulatorConversation(botId, sessionPhone);
   }
 }

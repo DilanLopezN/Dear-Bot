@@ -6,7 +6,7 @@ import { MenuService } from '../menu/menu.service';
 import { ClaudeService } from '../services/claude.service';
 import { OpenAIService } from '../services/openai.service';
 import { GeminiService } from '../services/gemini.service';
-import { MessagingService, ChannelConfig } from '../services/messaging.service';
+import { MessagingService, ChannelConfig, EMULATOR_CHANNEL } from '../services/messaging.service';
 import { ContactService } from '../contact/contact.service';
 import { LeadService } from '../lead/lead.service';
 import { IterationService } from '../iteration/iteration.service';
@@ -1262,6 +1262,305 @@ export class WebhookService {
     } catch (error) {
       this.logger.error(`Erro processando resposta interativa: ${error.message}`, error.stack);
     }
+  }
+
+  // ─── Emulador ───
+
+  /**
+   * Processa uma mensagem do emulador usando o mesmo pipeline do WhatsApp real.
+   * Usa EMULATOR_CHANNEL para não enviar mensagens reais.
+   * Retorna as mensagens outbound geradas pelo processamento.
+   */
+  async processEmulatorMessage(
+    botId: string,
+    text: string,
+    sessionPhone: string,
+  ): Promise<{
+    messages: Array<{ content: string; direction: string; senderType: string; createdAt: Date }>;
+    conversationId: string;
+    status: string;
+    variables: Record<string, { name: string; type: string; value: string }>;
+  }> {
+    const bot = await this.prisma.bot.findUnique({
+      where: { id: botId },
+      include: { whatsappChannel: true, aiConfig: true },
+    });
+
+    if (!bot || !bot.isActive) {
+      throw new Error(`Bot ${botId} não encontrado ou inativo`);
+    }
+
+    const channel = EMULATOR_CHANNEL;
+    const emulatorPhone = `emu_${sessionPhone}`;
+
+    const conversation = await this.conversationService.getOrCreate(
+      botId,
+      emulatorPhone,
+      'Emulador',
+    );
+
+    // Contar mensagens ANTES do processamento
+    const messageCountBefore = await this.prisma.message.count({
+      where: { conversationId: conversation.id },
+    });
+
+    // Salvar contexto e processar usando o pipeline real
+    const context = await this.getOrBuildContext(conversation);
+    const isFirstInteraction = context.messageCount === 0;
+
+    await this.conversationService.saveMessage(
+      conversation.id,
+      'INBOUND',
+      text,
+      `emu_in_${Date.now()}`,
+      'CONTACT',
+    );
+
+    await this.prisma.conversation.update({
+      where: { id: conversation.id },
+      data: { lastMessageAt: new Date() },
+    });
+
+    // Se conversa encerrada, reabrir
+    if (conversation.status === 'CLOSED') {
+      await this.prisma.conversation.update({
+        where: { id: conversation.id },
+        data: { status: 'BOT', isActive: true, flowStepIndex: 0 },
+      });
+      this.contextCache.invalidate(conversation.id);
+      conversation.status = 'BOT';
+      context.status = 'BOT';
+      const flow = this.parseFlowConfig(bot.flowConfig);
+      if (flow.initialInteraction) {
+        try {
+          await this.executeGoto(bot.id, channel, emulatorPhone, conversation.id, flow.initialInteraction);
+        } catch (error) {
+          this.logger.warn(`Emulador: falha initialInteraction após reabrir: ${error.message}`);
+          await this.executeFallback(bot, channel, emulatorPhone, conversation.id, error.message);
+        }
+        return this.collectEmulatorResponse(conversation.id, messageCountBefore);
+      }
+    }
+
+    // Se conversa em modo humano, não processar
+    if (conversation.status === 'HUMAN') {
+      return this.collectEmulatorResponse(conversation.id, messageCountBefore);
+    }
+
+    // Captura de variável pendente
+    const handledByCapture = await this.processVariableCapture(bot, channel, emulatorPhone, conversation, text);
+    if (handledByCapture) {
+      return this.collectEmulatorResponse(conversation.id, messageCountBefore);
+    }
+
+    // Primeira interação
+    if (isFirstInteraction) {
+      const flow = this.parseFlowConfig(bot.flowConfig);
+      if (flow.initialInteraction) {
+        try {
+          await this.executeGoto(bot.id, channel, emulatorPhone, conversation.id, flow.initialInteraction);
+        } catch (error) {
+          this.logger.warn(`Emulador: falha initialInteraction: ${error.message}`);
+          await this.executeFallback(bot, channel, emulatorPhone, conversation.id, error.message);
+        }
+        return this.collectEmulatorResponse(conversation.id, messageCountBefore);
+      } else if (bot.initialMessage) {
+        const initialResult = await this.messaging.sendTextMessage(channel, emulatorPhone, bot.initialMessage);
+        await this.conversationService.saveMessage(
+          conversation.id,
+          'OUTBOUND',
+          bot.initialMessage,
+          initialResult?.messageId,
+        );
+      }
+    }
+
+    // Flow steps
+    const handledByFlow = await this.processConfiguredFlowStep(bot, channel, emulatorPhone, conversation);
+    if (handledByFlow) {
+      return this.collectEmulatorResponse(conversation.id, messageCountBefore);
+    }
+
+    // Menu match
+    const menuMatch = await this.menuService.findMenuMatch(botId, text);
+    if (menuMatch) {
+      await this.sendMenu(botId, channel, emulatorPhone, conversation.id, menuMatch.menu.trigger);
+      return this.collectEmulatorResponse(conversation.id, messageCountBefore);
+    }
+
+    // Option match
+    const optionMatch = await this.menuService.findOptionResponse(botId, text);
+    if (optionMatch) {
+      if (optionMatch.option.goto) {
+        await this.executeGoto(botId, channel, emulatorPhone, conversation.id, optionMatch.option.goto);
+      } else {
+        const responseText = `Você selecionou: ${optionMatch.option.title}`;
+        const result = await this.messaging.sendTextMessage(channel, emulatorPhone, responseText);
+        await this.conversationService.saveMessage(conversation.id, 'OUTBOUND', responseText, result?.messageId);
+      }
+      return this.collectEmulatorResponse(conversation.id, messageCountBefore);
+    }
+
+    // Keyword/AI/Hybrid
+    let responseText: string | null = null;
+
+    switch (bot.responseMode) {
+      case 'KEYWORDS': {
+        const match = await this.keywordService.findMatch(botId, text);
+        if (match) {
+          responseText = await this.interpolateVariables(match.response, conversation.id, context);
+          const result = await this.messaging.sendTextMessage(channel, emulatorPhone, responseText);
+          await this.conversationService.saveMessage(conversation.id, 'OUTBOUND', responseText, result?.messageId);
+
+          if (match.captureVariable) {
+            await this.startVariableCapture(botId, channel, emulatorPhone, conversation.id, match.captureVariable, match.goto);
+            return this.collectEmulatorResponse(conversation.id, messageCountBefore);
+          }
+          if (match.goto) {
+            await this.executeGoto(botId, channel, emulatorPhone, conversation.id, match.goto);
+          }
+          return this.collectEmulatorResponse(conversation.id, messageCountBefore);
+        }
+
+        const flow = this.parseFlowConfig(bot.flowConfig);
+        if (flow.fallback?.message || flow.fallback?.goto) {
+          await this.executeFallback(bot, channel, emulatorPhone, conversation.id, 'Nenhuma keyword encontrada');
+          return this.collectEmulatorResponse(conversation.id, messageCountBefore);
+        }
+
+        if (flow.initialInteraction) {
+          try {
+            await this.executeGoto(bot.id, channel, emulatorPhone, conversation.id, flow.initialInteraction);
+            return this.collectEmulatorResponse(conversation.id, messageCountBefore);
+          } catch (error) {
+            this.logger.warn(`Emulador: falha ao reenviar menu: ${error.message}`);
+          }
+        }
+
+        responseText = 'Desculpe, não entendi. Tente reformular sua pergunta.';
+        break;
+      }
+
+      case 'AI':
+        responseText = await this.generateAIResponse(bot, conversation.id, text, context);
+        break;
+
+      case 'HYBRID': {
+        const match = await this.keywordService.findMatch(botId, text);
+        if (match) {
+          responseText = await this.interpolateVariables(match.response, conversation.id, context);
+          const result = await this.messaging.sendTextMessage(channel, emulatorPhone, responseText);
+          await this.conversationService.saveMessage(conversation.id, 'OUTBOUND', responseText, result?.messageId);
+
+          if (match.captureVariable) {
+            await this.startVariableCapture(botId, channel, emulatorPhone, conversation.id, match.captureVariable, match.goto);
+            return this.collectEmulatorResponse(conversation.id, messageCountBefore);
+          }
+          if (match.goto) {
+            await this.executeGoto(botId, channel, emulatorPhone, conversation.id, match.goto);
+          }
+          return this.collectEmulatorResponse(conversation.id, messageCountBefore);
+        }
+
+        const hybridFlow = this.parseFlowConfig(bot.flowConfig);
+        let hybridFlowHint = 'Guie o usuário de volta ao atendimento.';
+
+        const availableKeywords = await this.prisma.keyword.findMany({
+          where: { botId, isActive: true },
+          select: { trigger: true },
+        });
+        if (availableKeywords.length > 0) {
+          const triggers = availableKeywords.map((k) => k.trigger).join(', ');
+          hybridFlowHint = `Os tópicos disponíveis no fluxo do bot são: ${triggers}. Sugira ao usuário que digite uma dessas opções para continuar o atendimento.`;
+        }
+        if (hybridFlow.initialInteraction) {
+          hybridFlowHint += ' Ou sugira que o usuário digite "menu" ou "início" para voltar ao menu principal.';
+        }
+
+        responseText = await this.generateAIResponse(bot, conversation.id, text, context, hybridFlowHint);
+        break;
+      }
+    }
+
+    if (responseText) {
+      const interpolated = await this.interpolateVariables(responseText, conversation.id, context);
+      const result = await this.messaging.sendTextMessage(channel, emulatorPhone, interpolated);
+      await this.conversationService.saveMessage(conversation.id, 'OUTBOUND', interpolated, result?.messageId);
+    }
+
+    return this.collectEmulatorResponse(conversation.id, messageCountBefore);
+  }
+
+  /** Reseta a conversa do emulador */
+  async resetEmulatorConversation(botId: string, sessionPhone: string) {
+    const emulatorPhone = `emu_${sessionPhone}`;
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { botId_contactPhone: { botId, contactPhone: emulatorPhone } },
+    });
+
+    if (conversation) {
+      await this.prisma.message.deleteMany({ where: { conversationId: conversation.id } });
+      await this.prisma.conversationVariable.deleteMany({ where: { conversationId: conversation.id } });
+      await this.prisma.conversation.update({
+        where: { id: conversation.id },
+        data: {
+          status: 'BOT',
+          isActive: true,
+          flowStepIndex: 0,
+          waitingForVariable: false,
+          pendingVariableName: null,
+          pendingVariableType: null,
+          pendingVariableGoto: Prisma.JsonNull,
+        },
+      });
+      this.contextCache.invalidate(conversation.id);
+    }
+
+    return { success: true };
+  }
+
+  /** Coleta as mensagens outbound geradas pelo processamento do emulador */
+  private async collectEmulatorResponse(
+    conversationId: string,
+    messageCountBefore: number,
+  ) {
+    // Buscar todas as mensagens novas (após o processamento)
+    const allMessages = await this.prisma.message.findMany({
+      where: { conversationId },
+      orderBy: { createdAt: 'asc' },
+      skip: messageCountBefore,
+    });
+
+    // Filtrar apenas outbound (respostas do bot)
+    const outboundMessages = allMessages
+      .filter((m) => m.direction === 'OUTBOUND')
+      .map((m) => ({
+        content: m.content,
+        direction: m.direction,
+        senderType: m.senderType,
+        createdAt: m.createdAt,
+      }));
+
+    // Buscar estado atual da conversa
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+    });
+
+    // Buscar variáveis
+    const variables = await this.prisma.conversationVariable.findMany({
+      where: { conversationId },
+    });
+    const variablesMap: Record<string, { name: string; type: string; value: string }> = {};
+    for (const v of variables) {
+      variablesMap[v.name] = { name: v.name, type: v.type, value: v.value };
+    }
+
+    return {
+      messages: outboundMessages,
+      conversationId,
+      status: conversation?.status || 'BOT',
+      variables: variablesMap,
+    };
   }
 
   async processStatusUpdate(botId: string, messageId: string, status: string) {

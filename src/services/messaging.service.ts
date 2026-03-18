@@ -4,7 +4,7 @@ import { EvolutionService } from './evolution.service';
 import { BaileysService } from './baileys.service';
 
 export interface ChannelConfig {
-  provider: 'DIALOG360' | 'EVOLUTION' | 'BAILEYS';
+  provider: 'DIALOG360' | 'EVOLUTION' | 'BAILEYS' | 'EMULATOR';
   dialog360ApiKey?: string | null;
   evolutionApiUrl?: string | null;
   evolutionApiKey?: string | null;
@@ -13,6 +13,9 @@ export interface ChannelConfig {
   baileysApiKey?: string | null;
   baileysInstance?: string | null;
 }
+
+/** Canal virtual para o emulador — não envia mensagens reais */
+export const EMULATOR_CHANNEL: ChannelConfig = { provider: 'EMULATOR' };
 
 export interface SendResult {
   messageId?: string;
@@ -28,7 +31,15 @@ export class MessagingService {
     private baileys: BaileysService,
   ) {}
 
+  private emulatorMsgId(): string {
+    return `emu_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  }
+
   async sendTextMessage(channel: ChannelConfig, to: string, text: string): Promise<SendResult> {
+    if (channel.provider === 'EMULATOR') {
+      return { messageId: this.emulatorMsgId() };
+    }
+
     if (channel.provider === 'EVOLUTION') {
       const result = await this.evolution.sendTextMessage(
         channel.evolutionApiUrl!,
@@ -64,6 +75,10 @@ export class MessagingService {
     buttonText: string,
     sections: Array<{ title: string; rows: Array<{ id: string; title: string; description?: string }> }>,
   ): Promise<SendResult> {
+    if (channel.provider === 'EMULATOR') {
+      return { messageId: this.emulatorMsgId() };
+    }
+
     if (channel.provider === 'EVOLUTION') {
       const evoSections = sections.map((s) => ({
         title: s.title,
@@ -120,6 +135,10 @@ export class MessagingService {
     body: string,
     buttons: Array<{ id: string; title: string }>,
   ): Promise<SendResult> {
+    if (channel.provider === 'EMULATOR') {
+      return { messageId: this.emulatorMsgId() };
+    }
+
     if (channel.provider === 'EVOLUTION') {
       const evoButtons = buttons.map((b) => ({
         buttonId: b.id,
@@ -169,6 +188,10 @@ export class MessagingService {
     caption?: string,
     filename?: string,
   ): Promise<SendResult> {
+    if (channel.provider === 'EMULATOR') {
+      return { messageId: this.emulatorMsgId() };
+    }
+
     if (channel.provider === 'EVOLUTION') {
       const result = await this.evolution.sendMediaMessage(
         channel.evolutionApiUrl!,
@@ -209,6 +232,9 @@ export class MessagingService {
   }
 
   async markAsRead(channel: ChannelConfig, messageId: string): Promise<void> {
+    if (channel.provider === 'EMULATOR') {
+      return;
+    }
     if (channel.provider === 'EVOLUTION' || channel.provider === 'BAILEYS') {
       // Evolution e Baileys marcam como lido automaticamente
       return;

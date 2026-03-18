@@ -299,10 +299,7 @@ export class WebhookService {
     await this.clearWaitingForVariable(conversation.id);
 
     // Confirmar captura
-    const confirmMsg = await this.interpolateVariables(
-      `Valor registrado para *${conversation.pendingVariableName}*: ${parsed}`,
-      conversation.id,
-    );
+    const confirmMsg = 'Dado registrado com sucesso ✅';
     const confirmResult = await this.messaging.sendTextMessage(channel, from, confirmMsg);
     await this.conversationService.saveMessage(
       conversation.id,
@@ -314,6 +311,14 @@ export class WebhookService {
     // Executar goto pendente (se houver)
     if (pendingGoto) {
       await this.executeGoto(bot.id, channel, from, conversation.id, pendingGoto);
+    }
+
+    // Continuar automaticamente para a próxima etapa do fluxo (sem precisar de nova mensagem do usuário)
+    const updatedConversation = await this.prisma.conversation.findUnique({
+      where: { id: conversation.id },
+    });
+    if (updatedConversation && !updatedConversation.waitingForVariable) {
+      await this.processConfiguredFlowStep(bot, channel, from, updatedConversation);
     }
 
     return true;

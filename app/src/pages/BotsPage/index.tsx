@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useMemo } from 'react';
+import { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { useForm } from 'react-hook-form';
 import { useBotStore, type Bot } from '@/stores/bot.store';
 import { api, extractApiError, type InteractiveMenu, type MenuOption, type FlowConfig, type GotoTarget, type Keyword, type CaptureVariable, type BotIteration, type BotKnowledge } from '@/services/api';
@@ -12,6 +12,217 @@ import {
   GripVertical, BookOpen, Upload,
 } from 'lucide-react';
 import './BotsPage.css';
+
+// ─── Collect all bot variables ───
+interface BotVariable {
+  name: string;
+  type: string;
+  source: string; // e.g. "iteração: Boas-vindas", "keyword: oi", "menu: principal"
+}
+
+function collectBotVariables(
+  iterations: BotIteration[],
+  keywords: Keyword[],
+  menus: InteractiveMenu[],
+): BotVariable[] {
+  const vars: BotVariable[] = [];
+  const seen = new Set<string>();
+
+  for (const iter of iterations) {
+    if (iter.type === 'CAPTURE_VARIABLE') {
+      const c = iter.content as any;
+      if (c.name && !seen.has(c.name)) {
+        seen.add(c.name);
+        vars.push({ name: c.name, type: c.variableType || 'STRING', source: `iteração: ${iter.name}` });
+      }
+    }
+  }
+
+  for (const kw of keywords) {
+    if (kw.captureVariable?.name && !seen.has(kw.captureVariable.name)) {
+      seen.add(kw.captureVariable.name);
+      vars.push({ name: kw.captureVariable.name, type: kw.captureVariable.type, source: `keyword: ${kw.trigger}` });
+    }
+  }
+
+  for (const menu of menus) {
+    if (menu.captureVariable?.name && !seen.has(menu.captureVariable.name)) {
+      seen.add(menu.captureVariable.name);
+      vars.push({ name: menu.captureVariable.name, type: menu.captureVariable.type, source: `menu: ${menu.trigger}` });
+    }
+  }
+
+  return vars;
+}
+
+// ─── Variable Autocomplete Input ───
+function VariableInput({
+  value,
+  onChange,
+  variables,
+  multiline,
+  placeholder,
+  rows,
+  className,
+  style,
+}: {
+  value: string;
+  onChange: (val: string) => void;
+  variables: BotVariable[];
+  multiline?: boolean;
+  placeholder?: string;
+  rows?: number;
+  className?: string;
+  style?: React.CSSProperties;
+}) {
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [filter, setFilter] = useState('');
+  const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement | HTMLInputElement>(null);
+  const varTriggerIndex = useRef<number>(-1);
+
+  const filteredVars = useMemo(() => {
+    if (!filter) return variables;
+    const lower = filter.toLowerCase();
+    return variables.filter(v => v.name.toLowerCase().includes(lower));
+  }, [variables, filter]);
+
+  const closeDropdown = useCallback(() => {
+    setShowDropdown(false);
+    setFilter('');
+    setSelectedIndex(0);
+    varTriggerIndex.current = -1;
+  }, []);
+
+  const insertVariable = useCallback((varName: string) => {
+    const triggerStart = varTriggerIndex.current;
+    if (triggerStart < 0) return;
+
+    const el = inputRef.current;
+    const cursorPos = el?.selectionStart ?? value.length;
+    const before = value.substring(0, triggerStart);
+    const after = value.substring(cursorPos);
+    const newValue = before + `{{${varName}}}` + after;
+    onChange(newValue);
+    closeDropdown();
+
+    // Restore cursor position after React re-render
+    const newCursorPos = before.length + varName.length + 4; // 4 = {{ }}
+    requestAnimationFrame(() => {
+      if (el) {
+        el.selectionStart = newCursorPos;
+        el.selectionEnd = newCursorPos;
+        el.focus();
+      }
+    });
+  }, [value, onChange, closeDropdown]);
+
+  const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) => {
+    const newValue = e.target.value;
+    onChange(newValue);
+
+    const cursorPos = e.target.selectionStart ?? newValue.length;
+    // Look backwards from cursor for /var pattern
+    const textBeforeCursor = newValue.substring(0, cursorPos);
+    const varMatch = textBeforeCursor.match(/\/var(\w*)$/);
+
+    if (varMatch) {
+      varTriggerIndex.current = cursorPos - varMatch[0].length;
+      setFilter(varMatch[1] || '');
+      setSelectedIndex(0);
+
+      // Calculate dropdown position
+      const el = e.target;
+      const rect = el.getBoundingClientRect();
+      const containerRect = containerRef.current?.getBoundingClientRect();
+      if (containerRect) {
+        setDropdownPos({
+          top: rect.bottom - containerRect.top + 4,
+          left: 0,
+        });
+      }
+
+      setShowDropdown(true);
+    } else {
+      if (showDropdown) closeDropdown();
+    }
+  }, [onChange, showDropdown, closeDropdown]);
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (!showDropdown || filteredVars.length === 0) return;
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setSelectedIndex(prev => (prev + 1) % filteredVars.length);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setSelectedIndex(prev => (prev - 1 + filteredVars.length) % filteredVars.length);
+    } else if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault();
+      insertVariable(filteredVars[selectedIndex].name);
+    } else if (e.key === 'Escape') {
+      closeDropdown();
+    }
+  }, [showDropdown, filteredVars, selectedIndex, insertVariable, closeDropdown]);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    if (!showDropdown) return;
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        closeDropdown();
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showDropdown, closeDropdown]);
+
+  const sharedProps = {
+    ref: inputRef as any,
+    value,
+    onChange: handleChange,
+    onKeyDown: handleKeyDown,
+    placeholder,
+    className: className || 'form-input',
+    style,
+  };
+
+  return (
+    <div ref={containerRef} style={{ position: 'relative' }}>
+      {multiline ? (
+        <textarea {...sharedProps} rows={rows || 3} className={`${sharedProps.className} form-textarea`} />
+      ) : (
+        <input {...sharedProps} />
+      )}
+      {showDropdown && filteredVars.length > 0 && (
+        <div className="var-dropdown" style={{ top: dropdownPos.top, left: dropdownPos.left }}>
+          <div className="var-dropdown__header">
+            <Variable size={12} />
+            <span>Variáveis disponíveis</span>
+          </div>
+          {filteredVars.map((v, i) => (
+            <div
+              key={v.name}
+              className={`var-dropdown__item${i === selectedIndex ? ' var-dropdown__item--active' : ''}`}
+              onMouseDown={(e) => { e.preventDefault(); insertVariable(v.name); }}
+              onMouseEnter={() => setSelectedIndex(i)}
+            >
+              <span className="var-dropdown__item-name">{`{{${v.name}}}`}</span>
+              <span className="var-dropdown__item-meta">{v.type} &middot; {v.source}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {showDropdown && filteredVars.length === 0 && (
+        <div className="var-dropdown" style={{ top: dropdownPos.top, left: dropdownPos.left }}>
+          <div className="var-dropdown__empty">Nenhuma variável encontrada</div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ─── Modal wrapper ───
 function Modal({ open, onClose, title, children, wide }: { open: boolean; onClose: () => void; title: string; children: React.ReactNode; wide?: boolean }) {
@@ -278,8 +489,10 @@ function BotFormModal({ open, onClose, bot }: { open: boolean; onClose: () => vo
 function KeywordsModal({ open, onClose, bot }: { open: boolean; onClose: () => void; bot: Bot }) {
   const [keywords, setKeywords] = useState<Keyword[]>([]);
   const [menus, setMenus] = useState<InteractiveMenu[]>([]);
+  const [iterations, setIterations] = useState<BotIteration[]>([]);
   const [loading, setLoading] = useState(true);
-  const { register, handleSubmit, reset } = useForm({ defaultValues: { trigger: '', response: '', priority: 0 } });
+  const { register, handleSubmit, reset, setValue, watch } = useForm({ defaultValues: { trigger: '', response: '', priority: 0 } });
+  const responseValue = watch('response');
   const [gotoType, setGotoType] = useState<GotoTarget['type'] | ''>('');
   const [gotoTarget, setGotoTarget] = useState('');
   const [captureEnabled, setCaptureEnabled] = useState(false);
@@ -287,12 +500,15 @@ function KeywordsModal({ open, onClose, bot }: { open: boolean; onClose: () => v
   const [captureType, setCaptureType] = useState<CaptureVariable['type']>('STRING');
   const [capturePrompt, setCapturePrompt] = useState('');
 
+  const botVariables = useMemo(() => collectBotVariables(iterations, keywords, menus), [iterations, keywords, menus]);
+
   const load = async () => {
     setLoading(true);
     try {
-      const [kws, mns] = await Promise.all([api.getKeywords(bot.id), api.getMenus(bot.id)]);
+      const [kws, mns, iters] = await Promise.all([api.getKeywords(bot.id), api.getMenus(bot.id), api.getIterations(bot.id)]);
       setKeywords(kws);
       setMenus(mns);
+      setIterations(iters);
     } catch {} finally { setLoading(false); }
   };
   useEffect(() => { if (open) load(); }, [open]);
@@ -336,7 +552,15 @@ function KeywordsModal({ open, onClose, bot }: { open: boolean; onClose: () => v
       <form onSubmit={handleSubmit(onAdd)} className="keyword-form">
         <div className="keyword-form__inputs">
           <input {...register('trigger', { required: true })} placeholder="Palavra-chave" className="form-input" style={{ flex: 1 }} />
-          <input {...register('response', { required: true })} placeholder="Resposta do bot" className="form-input" style={{ flex: 1 }} />
+          <div style={{ flex: 1 }}>
+            <VariableInput
+              value={responseValue}
+              onChange={(val) => setValue('response', val, { shouldValidate: true })}
+              variables={botVariables}
+              placeholder="Resposta do bot (use /var para inserir variáveis)"
+              className="form-input"
+            />
+          </div>
         </div>
         <GotoSelector gotoType={gotoType} gotoTarget={gotoTarget} onTypeChange={setGotoType} onTargetChange={setGotoTarget} keywords={keywords} menus={menus} label="Goto (navegação após resposta)" showIteration showLastInteraction />
 
@@ -414,10 +638,12 @@ function KeywordsModal({ open, onClose, bot }: { open: boolean; onClose: () => v
 function MenusModal({ open, onClose, bot }: { open: boolean; onClose: () => void; bot: Bot }) {
   const [menus, setMenus] = useState<InteractiveMenu[]>([]);
   const [keywords, setKeywords] = useState<Keyword[]>([]);
+  const [iterations, setIterations] = useState<BotIteration[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [editingMenuId, setEditingMenuId] = useState<string | null>(null);
-  const { register, handleSubmit, reset } = useForm({ defaultValues: { trigger: '', title: '', body: '', footer: '' } });
+  const { register, handleSubmit, reset, setValue, watch } = useForm({ defaultValues: { trigger: '', title: '', body: '', footer: '' } });
+  const bodyValue = watch('body');
   const [options, setOptions] = useState<MenuOption[]>([]);
   const [optTitle, setOptTitle] = useState('');
   const [optDesc, setOptDesc] = useState('');
@@ -427,6 +653,8 @@ function MenusModal({ open, onClose, bot }: { open: boolean; onClose: () => void
   const [menuCaptureName, setMenuCaptureName] = useState('');
   const [menuCaptureType, setMenuCaptureType] = useState<CaptureVariable['type']>('STRING');
   const [menuCapturePrompt, setMenuCapturePrompt] = useState('');
+
+  const botVariables = useMemo(() => collectBotVariables(iterations, keywords, menus), [iterations, keywords, menus]);
 
   const resetFormState = () => {
     reset({ trigger: '', title: '', body: '', footer: '' });
@@ -445,9 +673,10 @@ function MenusModal({ open, onClose, bot }: { open: boolean; onClose: () => void
   const load = async () => {
     setLoading(true);
     try {
-      const [menusData, keywordsData] = await Promise.all([api.getMenus(bot.id), api.getKeywords(bot.id)]);
+      const [menusData, keywordsData, itersData] = await Promise.all([api.getMenus(bot.id), api.getKeywords(bot.id), api.getIterations(bot.id)]);
       setMenus(menusData);
       setKeywords(keywordsData);
+      setIterations(itersData);
     } catch {} finally { setLoading(false); }
   };
   useEffect(() => { if (open) load(); }, [open]);
@@ -528,7 +757,13 @@ function MenusModal({ open, onClose, bot }: { open: boolean; onClose: () => void
           </div>
           <div className="form-row">
             <FormField label="Corpo (descrição)">
-              <input {...register('body')} placeholder="Escolha uma opção abaixo" className="form-input" />
+              <VariableInput
+                value={bodyValue}
+                onChange={(val) => setValue('body', val)}
+                variables={botVariables}
+                placeholder="Escolha uma opção abaixo (use /var para variáveis)"
+                className="form-input"
+              />
             </FormField>
             <FormField label="Rodapé (opcional)">
               <input {...register('footer')} placeholder="Responda com o número" className="form-input" />
@@ -1914,6 +2149,8 @@ function IterationsModal({ open, onClose, bot }: { open: boolean; onClose: () =>
 
   useEffect(() => { if (open) load(); }, [open]);
 
+  const botVariables = useMemo(() => collectBotVariables(iterations, keywords, menus), [iterations, keywords, menus]);
+
   const buildContent = (): Record<string, any> => {
     switch (formType) {
       case 'TEXT':
@@ -2056,7 +2293,15 @@ function IterationsModal({ open, onClose, bot }: { open: boolean; onClose: () =>
           {/* TEXT fields */}
           {formType === 'TEXT' && (
             <FormField label="Mensagem">
-              <textarea className="form-input form-textarea" placeholder="Texto que o bot enviará. Use {{variavel}} para interpolação." rows={3} value={textMessage} onChange={e => setTextMessage(e.target.value)} />
+              <VariableInput
+                value={textMessage}
+                onChange={setTextMessage}
+                variables={botVariables}
+                multiline
+                rows={3}
+                placeholder="Texto que o bot enviará. Digite /var para inserir variáveis."
+                className="form-input"
+              />
             </FormField>
           )}
 
@@ -2152,12 +2397,14 @@ function IterationsModal({ open, onClose, bot }: { open: boolean; onClose: () =>
           {/* CLOSE_CONVERSATION fields */}
           {formType === 'CLOSE_CONVERSATION' && (
             <FormField label="Mensagem de encerramento">
-              <textarea
-                className="form-input form-textarea"
-                placeholder="Mensagem enviada ao encerrar a conversa"
-                rows={3}
+              <VariableInput
                 value={closeMessage}
-                onChange={e => setCloseMessage(e.target.value)}
+                onChange={setCloseMessage}
+                variables={botVariables}
+                multiline
+                rows={3}
+                placeholder="Mensagem enviada ao encerrar a conversa. Digite /var para variáveis."
+                className="form-input"
               />
             </FormField>
           )}

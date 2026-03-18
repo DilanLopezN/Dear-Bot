@@ -428,6 +428,83 @@ export class WebhookService {
     );
   }
 
+  /** Gera resposta da IA usando o prompt específico de uma iteração AI */
+  private async generateAIResponseForIteration(
+    bot: any,
+    conversationId: string,
+    userMessage: string,
+    iterationPrompt: string,
+    context?: ConversationContext,
+  ): Promise<string> {
+    // Usar o prompt da iteração como base, enriquecido com contexto da conversa
+    let enrichedPrompt = context
+      ? `${iterationPrompt}\n\n${serializeContextForAI(context)}`
+      : iterationPrompt;
+
+    // Buscar conhecimento relevante via RAG
+    let knowledgeContext: string | undefined;
+    try {
+      const relevantChunks = await this.knowledgeService.searchRelevantChunks(bot.id, userMessage, 5);
+      if (relevantChunks.length > 0) {
+        knowledgeContext = relevantChunks.join('\n\n---\n\n');
+      }
+    } catch (error) {
+      this.logger.warn(`Erro ao buscar conhecimento para bot ${bot.id}: ${error.message}`);
+    }
+
+    const aiConfig = bot.aiConfig;
+
+    if (aiConfig) {
+      switch (aiConfig.provider) {
+        case 'OPENAI':
+          return this.openaiService.generateResponse(
+            conversationId,
+            userMessage,
+            enrichedPrompt,
+            aiConfig.apiKey,
+            aiConfig.model,
+            aiConfig.maxTokens,
+            aiConfig.temperature,
+            knowledgeContext,
+          );
+        case 'GEMINI':
+          return this.geminiService.generateResponse(
+            conversationId,
+            userMessage,
+            enrichedPrompt,
+            aiConfig.apiKey,
+            aiConfig.model,
+            aiConfig.maxTokens,
+            aiConfig.temperature,
+            knowledgeContext,
+          );
+        case 'CLAUDE':
+        default:
+          return this.claudeService.generateResponse(
+            conversationId,
+            userMessage,
+            enrichedPrompt,
+            aiConfig.apiKey,
+            aiConfig.model,
+            aiConfig.maxTokens,
+            aiConfig.temperature,
+            knowledgeContext,
+          );
+      }
+    }
+
+    return this.claudeService.generateResponse(
+      conversationId,
+      userMessage,
+      enrichedPrompt,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      knowledgeContext,
+    );
+  }
+
   private async sendMenu(
     botId: string,
     channel: ChannelConfig,
@@ -631,6 +708,55 @@ export class WebhookService {
           await this.conversationService.saveMessage(conversationId, 'OUTBOUND', interpolatedMsg, result?.messageId);
           await this.closeConversation(conversationId);
           return; // Paramos a cadeia pois a conversa foi encerrada
+        }
+
+        case 'AI': {
+          // Iteração de I.A. - só funciona se o bot estiver no modo AI ou HYBRID
+          const bot = await this.prisma.bot.findUnique({
+            where: { id: botId },
+            include: { aiConfig: true },
+          });
+
+          if (!bot || (bot.responseMode !== 'AI' && bot.responseMode !== 'HYBRID')) {
+            this.logger.warn(
+              `Iteração AI ignorada: bot ${botId} não está no modo AI ou HYBRID (modo atual: ${bot?.responseMode})`,
+            );
+            break;
+          }
+
+          // Buscar a última mensagem do usuário para usar como input da IA
+          const recentMessages = await this.conversationService.getMessages(conversationId, 10);
+          const lastInbound = recentMessages.find((m) => m.direction === 'INBOUND');
+          const userMessage = lastInbound?.content || '';
+
+          // O prompt da iteração é usado como systemPrompt específico para este ponto do fluxo
+          const aiPrompt = await this.interpolateVariables(content.prompt || '', conversationId);
+
+          // Buscar contexto da conversa
+          const conversation = await this.prisma.conversation.findUnique({
+            where: { id: conversationId },
+          });
+          const aiContext = conversation ? await this.getOrBuildContext(conversation) : undefined;
+
+          // Gerar resposta da IA usando o prompt específico desta iteração
+          const aiResponseText = await this.generateAIResponseForIteration(
+            bot,
+            conversationId,
+            userMessage,
+            aiPrompt,
+            aiContext,
+          );
+
+          if (aiResponseText) {
+            const aiResult = await this.messaging.sendTextMessage(channel, to, aiResponseText);
+            await this.conversationService.saveMessage(
+              conversationId,
+              'OUTBOUND',
+              aiResponseText,
+              aiResult?.messageId,
+            );
+          }
+          break;
         }
       }
     }

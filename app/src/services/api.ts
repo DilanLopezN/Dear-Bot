@@ -667,6 +667,23 @@ class ApiService {
     const { data } = await this.client.delete(`/bots/${botId}/iterations/${iterationId}`);
     return data;
   }
+
+  // ─── Emulador ───
+
+  async sendEmulatorMessage(botId: string, text: string, sessionPhone: string): Promise<{
+    messages: Array<{ content: string; direction: string; senderType: string; createdAt: string }>;
+    conversationId: string;
+    status: string;
+    variables: Record<string, { name: string; type: string; value: string }>;
+  }> {
+    const { data } = await this.client.post(`/webhook/emulator/${botId}`, { text, sessionPhone });
+    return data;
+  }
+
+  async resetEmulatorConversation(botId: string, sessionPhone: string) {
+    const { data } = await this.client.delete(`/webhook/emulator/${botId}/${sessionPhone}`);
+    return data;
+  }
 }
 
 export const api = new ApiService();

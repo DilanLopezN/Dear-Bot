@@ -6,9 +6,10 @@ import { MessagingService } from './messaging.service';
 import { ClaudeService } from './claude.service';
 import { OpenAIService } from './openai.service';
 import { GeminiService } from './gemini.service';
+import { AiLearningService } from './ai-learning.service';
 
 @Module({
-  providers: [Dialog360Service, EvolutionService, BaileysService, MessagingService, ClaudeService, OpenAIService, GeminiService],
-  exports: [Dialog360Service, EvolutionService, BaileysService, MessagingService, ClaudeService, OpenAIService, GeminiService],
+  providers: [Dialog360Service, EvolutionService, BaileysService, MessagingService, ClaudeService, OpenAIService, GeminiService, AiLearningService],
+  exports: [Dialog360Service, EvolutionService, BaileysService, MessagingService, ClaudeService, OpenAIService, GeminiService, AiLearningService],
 })
 export class ServicesModule {}

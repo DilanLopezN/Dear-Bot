@@ -165,6 +165,7 @@ model Bot {
   leads             Lead[]
   iterations        BotIteration[]
   knowledge         BotKnowledge[]
+  learnings         AiLearning[]
 
   @@map("bots")
 }
@@ -240,6 +241,7 @@ model Conversation {
   humanTakeoverAt       DateTime?
   lastMessageAt         DateTime @default(now())
   flowStepIndex         Int      @default(0)
+  currentIterationIndex Int      @default(-1) // Índice da iteração atual (-1 = não executando)
   waitingForVariable    Boolean  @default(false)
   pendingVariableName   String?
   pendingVariableType   VariableType?
@@ -471,4 +473,22 @@ model BotIteration {
   @@index([botId])
   @@index([botId, order])
   @@map("bot_iterations")
+}
+
+model AiLearning {
+  id           String   @id @default(uuid())
+  botId        String
+  contactPhone String?  // null = aprendizado global do bot
+  type         String   // INTERACTION, PATTERN, PREFERENCE, SUMMARY
+  content      String   @db.Text // Conteúdo do aprendizado
+  metadata     Json?    // Dados extras (tópicos, sentimento, etc.)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  bot Bot @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@index([botId])
+  @@index([botId, contactPhone])
+  @@index([botId, type])
+  @@map("ai_learnings")
 }

@@ -162,7 +162,7 @@ export interface BotIteration {
   id: string;
   botId: string;
   name: string;
-  type: 'TEXT' | 'LINK' | 'DOCUMENT' | 'GOTO' | 'CAPTURE_VARIABLE' | 'CLOSE_CONVERSATION';
+  type: 'TEXT' | 'LINK' | 'DOCUMENT' | 'GOTO' | 'CAPTURE_VARIABLE' | 'CLOSE_CONVERSATION' | 'AI';
   content: Record<string, any>;
   order: number;
   isActive: boolean;
@@ -650,7 +650,7 @@ class ApiService {
 
   async createIteration(botId: string, payload: {
     name: string;
-    type: 'TEXT' | 'LINK' | 'DOCUMENT' | 'GOTO' | 'CAPTURE_VARIABLE' | 'CLOSE_CONVERSATION';
+    type: 'TEXT' | 'LINK' | 'DOCUMENT' | 'GOTO' | 'CAPTURE_VARIABLE' | 'CLOSE_CONVERSATION' | 'AI';
     content: Record<string, any>;
     order?: number;
   }) {

@@ -7,6 +7,7 @@ export enum IterationTypeDto {
   GOTO = 'GOTO',
   CAPTURE_VARIABLE = 'CAPTURE_VARIABLE',
   CLOSE_CONVERSATION = 'CLOSE_CONVERSATION',
+  AI = 'AI',
 }
 
 export class CreateIterationDto {

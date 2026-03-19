@@ -26,6 +26,11 @@ export class ClaudeService {
     try {
       const client = new Anthropic({ apiKey });
 
+      let finalSystemPrompt = systemPrompt || 'Você é um assistente de atendimento ao cliente. Responda de forma educada, objetiva e útil. Responda no idioma do cliente.';
+      if (knowledgeContext) {
+        finalSystemPrompt += `\n\n## Base de Conhecimento\nUse as informações abaixo para responder às perguntas do usuário. Baseie suas respostas neste conhecimento quando relevante:\n\n${knowledgeContext}`;
+      }
+
       // Busca últimas 20 mensagens para contexto
       const history = await this.prisma.message.findMany({
         where: { conversationId },

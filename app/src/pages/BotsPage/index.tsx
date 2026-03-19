@@ -9,7 +9,7 @@ import {
   Play, ArrowLeft, Check, CheckCheck, List, Cpu,
   GitBranch, ChevronRight, ArrowRight, Database, RotateCcw, Copy,
   Repeat, FileText, Link as LinkIcon, File, Variable,
-  GripVertical, BookOpen, Upload,
+  GripVertical, BookOpen, Upload, Sparkles,
 } from 'lucide-react';
 import './BotsPage.css';
 
@@ -1794,6 +1794,7 @@ const ITERATION_TYPES = [
   { value: 'GOTO', label: 'Goto', icon: ArrowRight, color: '#c084fc' },
   { value: 'CAPTURE_VARIABLE', label: 'Capturar Variável', icon: Variable, color: '#f472b6' },
   { value: 'CLOSE_CONVERSATION', label: 'Encerramento', icon: PowerOff, color: '#f87171' },
+  { value: 'AI', label: 'I.A.', icon: Sparkles, color: '#a78bfa' },
 ] as const;
 
 function IterationsModal({ open, onClose, bot }: { open: boolean; onClose: () => void; bot: Bot }) {
@@ -1836,6 +1837,9 @@ function IterationsModal({ open, onClose, bot }: { open: boolean; onClose: () =>
   // CLOSE_CONVERSATION content
   const [closeMessage, setCloseMessage] = useState('Atendimento encerrado. Obrigado pelo contato!');
 
+  // AI content
+  const [aiPrompt, setAiPrompt] = useState('');
+
   const resetForm = () => {
     setFormName('');
     setFormType('TEXT');
@@ -1855,6 +1859,7 @@ function IterationsModal({ open, onClose, bot }: { open: boolean; onClose: () =>
     setCapGotoType('');
     setCapGotoTarget('');
     setCloseMessage('Atendimento encerrado. Obrigado pelo contato!');
+    setAiPrompt('');
     setEditingId(null);
   };
 
@@ -1895,6 +1900,8 @@ function IterationsModal({ open, onClose, bot }: { open: boolean; onClose: () =>
         };
       case 'CLOSE_CONVERSATION':
         return { message: closeMessage };
+      case 'AI':
+        return { prompt: aiPrompt };
       default:
         return {};
     }
@@ -1973,6 +1980,9 @@ function IterationsModal({ open, onClose, bot }: { open: boolean; onClose: () =>
       case 'CLOSE_CONVERSATION':
         setCloseMessage(c.message || 'Atendimento encerrado. Obrigado pelo contato!');
         break;
+      case 'AI':
+        setAiPrompt(c.prompt || '');
+        break;
     }
   };
 
@@ -1987,6 +1997,7 @@ function IterationsModal({ open, onClose, bot }: { open: boolean; onClose: () =>
       case 'GOTO': return `${(c.type || '').toLowerCase()}: ${c.target || ''}`;
       case 'CAPTURE_VARIABLE': return `${c.name} (${c.variableType || 'STRING'})`;
       case 'CLOSE_CONVERSATION': return c.message?.substring(0, 60) || 'Encerrar conversa';
+      case 'AI': return c.prompt?.substring(0, 60) + (c.prompt?.length > 60 ? '...' : '') || 'Prompt I.A.';
       default: return '';
     }
   };
@@ -1994,7 +2005,7 @@ function IterationsModal({ open, onClose, bot }: { open: boolean; onClose: () =>
   return (
     <Modal open={open} onClose={onClose} title={`Iterações — ${bot.name}`} wide>
       <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 18 }}>
-        Configure as interações do bot: textos, links, documentos, navegação (goto) e captura de variáveis.
+        Configure as interações do bot: textos, links, documentos, navegação (goto), captura de variáveis e I.A.
       </p>
 
       {showAdd ? (
@@ -2131,6 +2142,24 @@ function IterationsModal({ open, onClose, bot }: { open: boolean; onClose: () =>
                 placeholder="Mensagem enviada ao encerrar a conversa. Digite /var para variáveis."
                 className="form-input"
               />
+            </FormField>
+          )}
+
+          {/* AI fields */}
+          {formType === 'AI' && (
+            <FormField label="Prompt da I.A.">
+              <VariableInput
+                value={aiPrompt}
+                onChange={setAiPrompt}
+                variables={botVariables}
+                multiline
+                rows={5}
+                placeholder="Instruções para a I.A. seguir neste ponto do fluxo. Ex: 'Você é um assistente de vendas. Apresente os produtos disponíveis e ajude o cliente a escolher.' Digite /var para inserir variáveis."
+                className="form-input"
+              />
+              <p style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 4 }}>
+                A I.A. seguirá exatamente este prompt quando o fluxo chegar nesta iteração. Funciona apenas nos modos I.A. ou Híbrido.
+              </p>
             </FormField>
           )}
 

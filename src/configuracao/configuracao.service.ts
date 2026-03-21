@@ -22,8 +22,8 @@ export class ConfiguracaoService {
   ) {}
 
   private getEvolutionConfig() {
-    const baseUrl = this.config.get<string>('EVOLUTION_API_URL');
-    const apiKey = this.config.get<string>('EVOLUTION_API_KEY');
+    const baseUrl = this.config.get<string>('EVOLUTION_API_URL')?.trim()?.replace(/\/+$/, '');
+    const apiKey = this.config.get<string>('EVOLUTION_API_KEY')?.trim();
     if (!baseUrl || !apiKey) {
       throw new BadRequestException(
         'Evolution API não configurada no servidor. Defina EVOLUTION_API_URL e EVOLUTION_API_KEY.',
@@ -37,12 +37,20 @@ export class ConfiguracaoService {
   }
 
   /** Verifica se o plano do usuário permite uso do Evolution API */
-  private checkPlanAccess(plan: SubscriptionPlan, planActive: boolean) {
+  private checkPlanAccess(plan: SubscriptionPlan, planActive: boolean, planExpiresAt?: Date | null) {
     if (!planActive) {
-      throw new ForbiddenException('Seu plano está inativo. Renove sua assinatura para continuar.');
+      throw new ForbiddenException('Seu plano está inativo. Realize o pagamento para reativar o acesso.');
     }
-    // Tester tem acesso limitado - só pode criar 1 instância
-    // PRO e ENTERPRISE têm acesso completo
+
+    // Verificar se o plano tester expirou
+    if (plan === 'TESTER' && planExpiresAt) {
+      if (new Date() > new Date(planExpiresAt)) {
+        throw new ForbiddenException(
+          'Seu período de teste expirou. Faça upgrade para o plano Pro ou Enterprise.',
+        );
+      }
+    }
+
     const planConfig = getPlanConfig(plan);
     return planConfig;
   }
@@ -78,11 +86,11 @@ export class ConfiguracaoService {
   async createInstance(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, plan: true, planActive: true },
+      select: { id: true, plan: true, planActive: true, planExpiresAt: true },
     });
     if (!user) throw new NotFoundException('Usuário não encontrado');
 
-    this.checkPlanAccess(user.plan, user.planActive);
+    this.checkPlanAccess(user.plan, user.planActive, user.planExpiresAt);
 
     const existing = await this.prisma.evolutionInstance.findUnique({
       where: { userId },
@@ -114,7 +122,18 @@ export class ConfiguracaoService {
 
       return { instance, evolutionData: result };
     } catch (error) {
-      this.logger.error(`Erro ao criar instância Evolution para usuário ${userId}: ${error.message}`);
+      const statusCode = error?.response?.status;
+      const detail = error?.response?.data
+        ? JSON.stringify(error.response.data)
+        : error.message;
+      this.logger.error(`Erro ao criar instância Evolution para usuário ${userId} (HTTP ${statusCode}): ${detail}`);
+
+      if (statusCode === 401) {
+        throw new BadRequestException(
+          'Falha de autenticação na Evolution API. Verifique se a EVOLUTION_API_KEY está correta.',
+        );
+      }
+
       throw new BadRequestException(`Falha ao criar instância na Evolution API: ${error.message}`);
     }
   }

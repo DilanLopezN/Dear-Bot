@@ -2,10 +2,13 @@ import {
   Injectable,
   NotFoundException,
   ForbiddenException,
+  BadRequestException,
   Logger
 } from '@nestjs/common'
 import { PrismaService } from '../prisma/prisma.service'
 import { CreateBotDto, UpdateBotDto } from './dto/bot.dto'
+import { PLAN_CONFIGS } from '../common/plans/plan-config'
+import { hasFeature } from '../common/plans/plan-config'
 
 @Injectable()
 export class BotService {
@@ -16,11 +19,31 @@ export class BotService {
   async create(userId: string, dto: CreateBotDto) {
     this.logger.log(`Criando bot para usuário ${userId}: ${dto.name}`)
     try {
+      // Verificar limite de bots do plano
+      const user = await this.prisma.user.findUnique({ where: { id: userId } })
+      if (!user) throw new NotFoundException('Usuário não encontrado')
+
+      const config = PLAN_CONFIGS[user.plan]
+      const botCount = await this.prisma.bot.count({ where: { userId } })
+      if (botCount >= config.maxBots) {
+        throw new BadRequestException(
+          `Limite de ${config.maxBots} bot(s) atingido no plano ${config.name}. Faça upgrade para criar mais bots.`
+        )
+      }
+
+      // Tester só pode criar bot em modo KEYWORDS
+      if (user.plan === 'TESTER' && dto.responseMode && dto.responseMode !== 'KEYWORDS') {
+        throw new BadRequestException(
+          'No plano Tester, o bot só pode funcionar no modo KEYWORDS. Faça upgrade para usar IA.'
+        )
+      }
+
       return await this.prisma.bot.create({
         data: { ...dto, userId },
         include: { whatsappChannel: true, aiConfig: true }
       })
     } catch (err) {
+      if (err instanceof BadRequestException || err instanceof NotFoundException) throw err
       this.logger.error(
         `Erro ao criar bot para usuário ${userId}: ${err.message}`,
         err.stack
@@ -297,6 +320,16 @@ export class BotService {
     this.logger.log(`Atualizando bot ${botId} para usuário ${userId}`)
     try {
       await this.findOne(userId, botId)
+
+      // Tester só pode usar modo KEYWORDS
+      if (dto.responseMode && dto.responseMode !== 'KEYWORDS') {
+        const user = await this.prisma.user.findUnique({ where: { id: userId } })
+        if (user?.plan === 'TESTER') {
+          throw new BadRequestException(
+            'No plano Tester, o bot só pode funcionar no modo KEYWORDS. Faça upgrade para usar IA.'
+          )
+        }
+      }
 
       const { aiConfigId, flowConfig, ...rest } = dto as any
       const updateData: Record<string, any> = { ...rest }

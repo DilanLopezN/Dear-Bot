@@ -6,8 +6,11 @@ import { LeadService } from './lead.service';
 import { CreateLeadDto } from './dto/create-lead.dto';
 import { UpdateLeadDto } from './dto/update-lead.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { PlanGuard } from '../common/guards/plan.guard';
+import { RequirePlanFeature } from '../common/guards/plan.guard';
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PlanGuard)
+@RequirePlanFeature('leads')
 @Controller('bots/:botId/leads')
 export class LeadController {
   constructor(private readonly leadService: LeadService) {}

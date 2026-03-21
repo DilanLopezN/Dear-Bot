@@ -30,8 +30,16 @@ export class AuthService {
       if (exists) throw new ConflictException('Email já cadastrado');
 
       const hash = await bcrypt.hash(dto.password, 10);
+      const planExpiresAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000); // 3 dias
       await this.prisma.user.create({
-        data: { name: dto.name, email: dto.email, password: hash },
+        data: {
+          name: dto.name,
+          email: dto.email,
+          password: hash,
+          plan: 'TESTER',
+          planExpiresAt,
+          planActive: true,
+        },
       });
 
       this.logger.log(`Usuário registrado com sucesso: ${dto.email}`);
@@ -93,7 +101,7 @@ export class AuthService {
       });
 
       this.logger.log(`Login com token bem-sucedido: ${dto.email}`);
-      return this.signJwt(user.id, user.email);
+      return await this.signJwt(user.id, user.email);
     } catch (err) {
       if (err instanceof UnauthorizedException) throw err;
       this.logger.error(`Erro no login com token ${dto.email}: ${err.message}`, err.stack);
@@ -113,7 +121,7 @@ export class AuthService {
       if (!valid) throw new UnauthorizedException('Credenciais inválidas');
 
       this.logger.log(`Login com senha bem-sucedido: ${dto.email}`);
-      return this.signJwt(user.id, user.email);
+      return await this.signJwt(user.id, user.email);
     } catch (err) {
       if (err instanceof UnauthorizedException) throw err;
       this.logger.error(`Erro no login com senha ${dto.email}: ${err.message}`, err.stack);
@@ -121,9 +129,18 @@ export class AuthService {
     }
   }
 
-  private signJwt(userId: string, email: string) {
+  private async signJwt(userId: string, email: string) {
     const token = this.jwt.sign({ sub: userId, email });
-    return { access_token: token };
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { plan: true, planActive: true, planExpiresAt: true },
+    });
+    return {
+      access_token: token,
+      plan: user?.plan,
+      planActive: user?.planActive,
+      planExpiresAt: user?.planExpiresAt,
+    };
   }
 
   private generateToken(): string {

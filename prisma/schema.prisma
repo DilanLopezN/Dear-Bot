@@ -26,9 +26,16 @@ enum MessageStatus {
 }
 
 enum SubscriptionPlan {
-  FREE
+  TESTER
   PRO
   ENTERPRISE
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  OVERDUE
+  EXPIRED
+  CANCELLED
 }
 
 enum AiProvider {
@@ -108,16 +115,55 @@ model User {
   email            String   @unique
   password         String
   name             String
-  plan             SubscriptionPlan @default(FREE)
+  cpfCnpj          String?
+  plan             SubscriptionPlan @default(TESTER)
+  planExpiresAt    DateTime?        // Data de expiração do plano tester (3 dias após registro)
+  planActive       Boolean          @default(true)
+  asaasCustomerId  String?          @unique // ID do cliente no Asaas
   loginToken       String?
   loginTokenExpiry DateTime?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  bots      Bot[]
-  aiConfigs AiConfig[]
+  bots              Bot[]
+  aiConfigs         AiConfig[]
+  subscription      Subscription?
+  evolutionInstance EvolutionInstance?
 
   @@map("users")
+}
+
+model EvolutionInstance {
+  id           String   @id @default(uuid())
+  userId       String   @unique
+  instanceName String   // Nome gerado automaticamente
+  status       String   @default("DISCONNECTED") // CONNECTED, DISCONNECTED, CONNECTING, QRCODE
+  phoneNumber  String?  // Número conectado (preenchido após conexão)
+  webhookUrl   String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("evolution_instances")
+}
+
+model Subscription {
+  id                  String             @id @default(uuid())
+  userId              String             @unique
+  asaasSubscriptionId String?            @unique // ID da assinatura no Asaas
+  plan                SubscriptionPlan
+  status              SubscriptionStatus @default(ACTIVE)
+  value               Float
+  billingType         String             @default("PIX") // BOLETO, CREDIT_CARD, PIX
+  nextDueDate         DateTime?
+  lastPaymentAt       DateTime?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("subscriptions")
 }
 
 model AiConfig {

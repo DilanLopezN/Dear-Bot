@@ -2,10 +2,13 @@ import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards } from '@nes
 import { IterationService } from './iteration.service';
 import { CreateIterationDto, UpdateIterationDto } from './dto/iteration.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { PlanGuard } from '../common/guards/plan.guard';
+import { RequirePlanFeature } from '../common/guards/plan.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 
 @Controller('bots/:botId/iterations')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PlanGuard)
+@RequirePlanFeature('ai_iterations')
 export class IterationController {
   constructor(private iterationService: IterationService) {}
 

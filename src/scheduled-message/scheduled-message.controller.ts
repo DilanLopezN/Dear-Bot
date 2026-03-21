@@ -5,8 +5,11 @@ import {
 import { ScheduledMessageService } from './scheduled-message.service';
 import { CreateScheduledMessageDto } from './dto/create-scheduled-message.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { PlanGuard } from '../common/guards/plan.guard';
+import { RequirePlanFeature } from '../common/guards/plan.guard';
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PlanGuard)
+@RequirePlanFeature('scheduled_messages')
 @Controller('bots/:botId/scheduled-messages')
 export class ScheduledMessageController {
   constructor(private readonly service: ScheduledMessageService) {}

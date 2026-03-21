@@ -990,12 +990,45 @@ export class WebhookService {
     try {
       const bot = await this.prisma.bot.findUnique({
         where: { id: botId },
-        include: { whatsappChannel: true, aiConfig: true },
+        include: { whatsappChannel: true, aiConfig: true, user: true },
       });
 
       if (!bot || !bot.isActive || !bot.whatsappChannel) {
         this.logger.warn(`Bot ${botId} não encontrado ou inativo`);
         return;
+      }
+
+      // Verificar se o plano do usuário está ativo
+      if (!bot.user.planActive) {
+        this.logger.warn(`Bot ${botId} bloqueado - plano inativo para usuário ${bot.userId}`);
+        return;
+      }
+
+      // Verificar se o plano tester expirou
+      if (bot.user.plan === 'TESTER' && bot.user.planExpiresAt && new Date() > bot.user.planExpiresAt) {
+        this.logger.warn(`Bot ${botId} bloqueado - período de teste expirado para usuário ${bot.userId}`);
+        return;
+      }
+
+      // Verificar limite diário de mensagens (Pro = 2000/dia)
+      if (bot.user.plan !== 'ENTERPRISE') {
+        const { PLAN_CONFIGS } = await import('../common/plans/plan-config');
+        const planConfig = PLAN_CONFIGS[bot.user.plan];
+        if (planConfig.maxDailyMessages !== -1) {
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const dailyCount = await this.prisma.message.count({
+            where: {
+              conversation: { bot: { userId: bot.userId } },
+              direction: 'OUTBOUND',
+              createdAt: { gte: today },
+            },
+          });
+          if (dailyCount >= planConfig.maxDailyMessages) {
+            this.logger.warn(`Bot ${botId} bloqueado - limite diário de ${planConfig.maxDailyMessages} mensagens atingido`);
+            return;
+          }
+        }
       }
 
       const channel = MessagingService.fromChannel(bot.whatsappChannel);

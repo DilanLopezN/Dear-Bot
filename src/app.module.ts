@@ -19,6 +19,7 @@ import { LeadModule } from './lead/lead.module';
 import { IterationModule } from './iteration/iteration.module';
 import { KnowledgeModule } from './knowledge/knowledge.module';
 import { SubscriptionModule } from './subscription/subscription.module';
+import { ConfiguracaoModule } from './configuracao/configuracao.module';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { SubscriptionModule } from './subscription/subscription.module';
     IterationModule,
     KnowledgeModule,
     SubscriptionModule,
+    ConfiguracaoModule,
   ],
 })
 export class AppModule {}

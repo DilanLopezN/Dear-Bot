@@ -12,7 +12,8 @@ export type PlanFeature =
   | 'ai_iterations'
   | 'leads'
   | 'knowledge_base'
-  | 'chat_management';
+  | 'chat_management'
+  | 'whatsapp_instance';
 
 export interface PlanConfig {
   name: string;
@@ -33,6 +34,7 @@ export const PLAN_CONFIGS: Record<SubscriptionPlan, PlanConfig> = {
     features: [
       'dashboard',
       'bot_keywords',
+      'whatsapp_instance',
     ],
   },
   PRO: {
@@ -54,6 +56,7 @@ export const PLAN_CONFIGS: Record<SubscriptionPlan, PlanConfig> = {
       'leads',
       'knowledge_base',
       'chat_management',
+      'whatsapp_instance',
     ],
   },
   ENTERPRISE: {
@@ -75,6 +78,7 @@ export const PLAN_CONFIGS: Record<SubscriptionPlan, PlanConfig> = {
       'leads',
       'knowledge_base',
       'chat_management',
+      'whatsapp_instance',
     ],
   },
 };

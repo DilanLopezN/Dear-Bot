@@ -684,6 +684,33 @@ class ApiService {
     const { data } = await this.client.delete(`/webhook/emulator/${botId}/${sessionPhone}`);
     return data;
   }
+
+  // ── Configuração / Evolution Instance ────────────────────────────────────
+
+  async getConfigInstance() {
+    const { data } = await this.client.get('/configuracao/instance');
+    return data;
+  }
+
+  async createConfigInstance() {
+    const { data } = await this.client.post('/configuracao/instance');
+    return data;
+  }
+
+  async getConfigInstanceQrCode() {
+    const { data } = await this.client.get('/configuracao/instance/qrcode');
+    return data;
+  }
+
+  async getConfigInstanceStatus() {
+    const { data } = await this.client.get('/configuracao/instance/status');
+    return data;
+  }
+
+  async deleteConfigInstance() {
+    const { data } = await this.client.delete('/configuracao/instance');
+    return data;
+  }
 }
 
 export const api = new ApiService();

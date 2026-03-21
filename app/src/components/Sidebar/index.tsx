@@ -16,6 +16,7 @@ import {
   CalendarClock,
   Megaphone,
   Target,
+  Settings,
 } from 'lucide-react';
 import './Sidebar.css';
 
@@ -27,6 +28,7 @@ const navItems = [
   { to: '/leads', icon: Target, label: 'Leads' },
   { to: '/scheduled-messages', icon: CalendarClock, label: 'Agendamentos' },
   { to: '/broadcast', icon: Megaphone, label: 'Transmissão' },
+  { to: '/configuracao', icon: Settings, label: 'Configuração' },
   { to: '/ai-config', icon: Cpu, label: 'Configuração I.A.' },
   { to: '/relatorios', icon: BarChart3, label: 'Relatórios' },
   { to: '/financeiro', icon: CreditCard, label: 'Financeiro' },

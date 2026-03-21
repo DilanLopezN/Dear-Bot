@@ -125,11 +125,27 @@ model User {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  bots         Bot[]
-  aiConfigs    AiConfig[]
-  subscription Subscription?
+  bots              Bot[]
+  aiConfigs         AiConfig[]
+  subscription      Subscription?
+  evolutionInstance EvolutionInstance?
 
   @@map("users")
+}
+
+model EvolutionInstance {
+  id           String   @id @default(uuid())
+  userId       String   @unique
+  instanceName String   // Nome gerado automaticamente
+  status       String   @default("DISCONNECTED") // CONNECTED, DISCONNECTED, CONNECTING, QRCODE
+  phoneNumber  String?  // Número conectado (preenchido após conexão)
+  webhookUrl   String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("evolution_instances")
 }
 
 model Subscription {

@@ -42,6 +42,8 @@ export class SubscriptionController {
       dto.plan,
       dto.billingType || 'PIX',
       dto.cpfCnpj,
+      dto.creditCard,
+      dto.creditCardHolderInfo,
     );
   }
 
@@ -55,6 +57,12 @@ export class SubscriptionController {
   @UseGuards(JwtAuthGuard)
   getMessageUsage(@CurrentUser('id') userId: string) {
     return this.subscriptionService.checkDailyMessageLimit(userId);
+  }
+
+  @Get('payments')
+  @UseGuards(JwtAuthGuard)
+  getPaymentHistory(@CurrentUser('id') userId: string) {
+    return this.subscriptionService.getPaymentHistory(userId);
   }
 
   // ─── Webhook público do Asaas ─────────────────────────────────────────────

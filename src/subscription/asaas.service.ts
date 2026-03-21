@@ -9,6 +9,23 @@ interface CreateCustomerDto {
   externalReference?: string;
 }
 
+interface CreditCard {
+  holderName: string;
+  number: string;
+  expiryMonth: string;
+  expiryYear: string;
+  ccv: string;
+}
+
+interface CreditCardHolderInfo {
+  name: string;
+  email: string;
+  cpfCnpj: string;
+  postalCode: string;
+  addressNumber: string;
+  phone: string;
+}
+
 interface CreateSubscriptionDto {
   customer: string; // Asaas customer ID
   billingType: 'BOLETO' | 'CREDIT_CARD' | 'PIX';
@@ -17,6 +34,8 @@ interface CreateSubscriptionDto {
   cycle: 'MONTHLY';
   description: string;
   externalReference?: string;
+  creditCard?: CreditCard;
+  creditCardHolderInfo?: CreditCardHolderInfo;
 }
 
 @Injectable()
@@ -70,7 +89,7 @@ export class AsaasService {
   async createSubscription(data: CreateSubscriptionDto) {
     this.logger.log(`Criando assinatura no Asaas para cliente: ${data.customer}`);
     try {
-      const response = await this.api.post('/v3/subscriptions', {
+      const payload: Record<string, any> = {
         customer: data.customer,
         billingType: data.billingType,
         value: data.value,
@@ -78,7 +97,14 @@ export class AsaasService {
         cycle: data.cycle,
         description: data.description,
         externalReference: data.externalReference,
-      });
+      };
+
+      if (data.billingType === 'CREDIT_CARD' && data.creditCard) {
+        payload.creditCard = data.creditCard;
+        payload.creditCardHolderInfo = data.creditCardHolderInfo;
+      }
+
+      const response = await this.api.post('/v3/subscriptions', payload);
       this.logger.log(`Assinatura criada no Asaas: ${response.data.id}`);
       return response.data;
     } catch (err) {
@@ -114,6 +140,26 @@ export class AsaasService {
       return response.data;
     } catch (err) {
       this.logger.error(`Erro ao buscar pagamentos da assinatura: ${err.message}`);
+      throw err;
+    }
+  }
+
+  async getPayment(paymentId: string) {
+    try {
+      const response = await this.api.get(`/v3/payments/${paymentId}`);
+      return response.data;
+    } catch (err) {
+      this.logger.error(`Erro ao buscar pagamento ${paymentId}: ${err.message}`);
+      throw err;
+    }
+  }
+
+  async getPaymentPixQrCode(paymentId: string) {
+    try {
+      const response = await this.api.get(`/v3/payments/${paymentId}/pixQrCode`);
+      return response.data;
+    } catch (err) {
+      this.logger.error(`Erro ao buscar QR Code PIX do pagamento ${paymentId}: ${err.message}`);
       throw err;
     }
   }

@@ -11,6 +11,7 @@ import { ContactService } from '../contact/contact.service';
 import { LeadService } from '../lead/lead.service';
 import { IterationService } from '../iteration/iteration.service';
 import { KnowledgeService } from '../knowledge/knowledge.service';
+import { AiLearningService } from '../services/ai-learning.service';
 import { ContextCacheService } from './context-cache.service';
 import { ConversationContext, serializeContextForAI } from './conversation-context';
 import { Prisma, VariableType } from '@prisma/client';
@@ -42,6 +43,9 @@ type FlowConfig = {
 export class WebhookService {
   private readonly logger = new Logger(WebhookService.name);
 
+  /** Lock por conversa para evitar processamento concorrente que quebra a ordem das iterações */
+  private conversationLocks = new Map<string, Promise<void>>();
+
   constructor(
     private prisma: PrismaService,
     private conversationService: ConversationService,
@@ -55,8 +59,31 @@ export class WebhookService {
     private leadService: LeadService,
     private iterationService: IterationService,
     private knowledgeService: KnowledgeService,
+    private aiLearningService: AiLearningService,
     private contextCache: ContextCacheService,
   ) {}
+
+  /** Adquire lock para uma conversa, garantindo processamento sequencial */
+  private async acquireConversationLock(conversationKey: string): Promise<() => void> {
+    let resolve: () => void;
+    const newLock = new Promise<void>((r) => { resolve = r; });
+
+    const existingLock = this.conversationLocks.get(conversationKey);
+    this.conversationLocks.set(conversationKey, newLock);
+
+    // Aguardar o lock anterior terminar
+    if (existingLock) {
+      await existingLock;
+    }
+
+    return () => {
+      resolve!();
+      // Limpar o lock se for o último
+      if (this.conversationLocks.get(conversationKey) === newLock) {
+        this.conversationLocks.delete(conversationKey);
+      }
+    };
+  }
 
   /** Constrói ou recupera do cache o contexto da conversa */
   private async getOrBuildContext(conversation: any): Promise<ConversationContext> {
@@ -364,6 +391,13 @@ export class WebhookService {
       enrichedPrompt += `\n\n## Modo Híbrido - Instrução Especial\nO usuário perguntou algo fora do fluxo do bot. Responda a pergunta do usuário de forma útil e educada, mas ao final da resposta, gentilmente guie o usuário de volta ao fluxo do atendimento. ${hybridFlowHint}`;
     }
 
+    // Buscar aprendizados da IA para enriquecer o prompt
+    const contactPhone = context?.contactPhone;
+    const learningContext = await this.aiLearningService.getLearningContext(bot.id, contactPhone || undefined);
+    if (learningContext) {
+      enrichedPrompt += `\n\n${learningContext}`;
+    }
+
     // Buscar conhecimento relevante via RAG
     let knowledgeContext: string | undefined;
     try {
@@ -435,11 +469,17 @@ export class WebhookService {
     userMessage: string,
     iterationPrompt: string,
     context?: ConversationContext,
+    learningContext?: string,
   ): Promise<string> {
     // Usar o prompt da iteração como base, enriquecido com contexto da conversa
     let enrichedPrompt = context
       ? `${iterationPrompt}\n\n${serializeContextForAI(context)}`
       : iterationPrompt;
+
+    // Adicionar aprendizados da IA ao prompt
+    if (learningContext) {
+      enrichedPrompt += `\n\n${learningContext}`;
+    }
 
     // Buscar conhecimento relevante via RAG
     let knowledgeContext: string | undefined;
@@ -633,7 +673,7 @@ export class WebhookService {
     return false;
   }
 
-  /** Executa todas as iterações ativas do bot em sequência */
+  /** Executa todas as iterações ativas do bot em sequência estrita, respeitando a ordem */
   private async executeIterations(
     botId: string,
     channel: ChannelConfig,
@@ -646,8 +686,25 @@ export class WebhookService {
       return;
     }
 
-    for (const iteration of iterations) {
+    // Marcar que estamos executando iterações
+    await this.prisma.conversation.update({
+      where: { id: conversationId },
+      data: { currentIterationIndex: 0 },
+    });
+
+    this.logger.log(`Iniciando execução de ${iterations.length} iterações para conversa ${conversationId}`);
+
+    for (let i = 0; i < iterations.length; i++) {
+      const iteration = iterations[i];
       const content = iteration.content as any;
+
+      // Atualizar índice da iteração atual no banco
+      await this.prisma.conversation.update({
+        where: { id: conversationId },
+        data: { currentIterationIndex: i },
+      });
+
+      this.logger.log(`Executando iteração ${i}/${iterations.length - 1}: ${iteration.type} (order: ${iteration.order}, name: ${iteration.name})`);
 
       switch (iteration.type) {
         case 'TEXT': {
@@ -698,6 +755,7 @@ export class WebhookService {
           };
           const gotoAfter = content.goto ? { type: content.goto.type, target: content.goto.target } : undefined;
           await this.startVariableCapture(botId, channel, to, conversationId, captureConfig, gotoAfter);
+          // Mantemos currentIterationIndex para retomar após captura
           return; // Paramos a cadeia pois aguardamos input do usuário
         }
 
@@ -738,6 +796,10 @@ export class WebhookService {
           });
           const aiContext = conversation ? await this.getOrBuildContext(conversation) : undefined;
 
+          // Buscar aprendizados da IA para enriquecer o prompt
+          const contactPhone = conversation?.contactPhone;
+          const learningContext = await this.aiLearningService.getLearningContext(botId, contactPhone || undefined);
+
           // Gerar resposta da IA usando o prompt específico desta iteração
           const aiResponseText = await this.generateAIResponseForIteration(
             bot,
@@ -745,6 +807,7 @@ export class WebhookService {
             userMessage,
             aiPrompt,
             aiContext,
+            learningContext,
           );
 
           if (aiResponseText) {
@@ -755,11 +818,28 @@ export class WebhookService {
               aiResponseText,
               aiResult?.messageId,
             );
+
+            // Salvar aprendizado da interação
+            this.aiLearningService.saveInteractionLearning(
+              botId,
+              contactPhone || '',
+              userMessage,
+              aiResponseText,
+              conversation?.contactName || undefined,
+            ).catch((err) => this.logger.warn(`Erro ao salvar aprendizado: ${err.message}`));
           }
           break;
         }
       }
     }
+
+    // Resetar índice de iteração ao terminar
+    await this.prisma.conversation.update({
+      where: { id: conversationId },
+      data: { currentIterationIndex: -1 },
+    });
+
+    this.logger.log(`Iterações concluídas para conversa ${conversationId}`);
   }
 
   /** Encerra a conversa, marcando como CLOSED */
@@ -889,6 +969,24 @@ export class WebhookService {
     messageId: string,
     contactName?: string,
   ) {
+    // Adquirir lock para esta conversa (botId+from) para evitar processamento concorrente
+    const lockKey = `${botId}:${from}`;
+    const releaseLock = await this.acquireConversationLock(lockKey);
+
+    try {
+      await this._processIncomingMessageInternal(botId, from, text, messageId, contactName);
+    } finally {
+      releaseLock();
+    }
+  }
+
+  private async _processIncomingMessageInternal(
+    botId: string,
+    from: string,
+    text: string,
+    messageId: string,
+    contactName?: string,
+  ) {
     try {
       const bot = await this.prisma.bot.findUnique({
         where: { id: botId },
@@ -948,7 +1046,7 @@ export class WebhookService {
       if (conversation.status === 'CLOSED') {
         await this.prisma.conversation.update({
           where: { id: conversation.id },
-          data: { status: 'BOT', isActive: true, flowStepIndex: 0 },
+          data: { status: 'BOT', isActive: true, flowStepIndex: 0, currentIterationIndex: -1 },
         });
         this.contextCache.invalidate(conversation.id);
         conversation.status = 'BOT';
@@ -1132,6 +1230,17 @@ export class WebhookService {
           interpolated,
           result?.messageId,
         );
+
+        // Salvar aprendizado da interação (AI e HYBRID)
+        if (bot.responseMode === 'AI' || bot.responseMode === 'HYBRID') {
+          this.aiLearningService.saveInteractionLearning(
+            botId,
+            from,
+            text,
+            interpolated,
+            contactName || conversation.contactName || undefined,
+          ).catch((err) => this.logger.warn(`Erro ao salvar aprendizado: ${err.message}`));
+        }
       }
     } catch (error) {
       this.logger.error(`Erro processando mensagem: ${error.message}`, error.stack);
@@ -1200,7 +1309,7 @@ export class WebhookService {
       if (conversation.status === 'CLOSED') {
         await this.prisma.conversation.update({
           where: { id: conversation.id },
-          data: { status: 'BOT', isActive: true, flowStepIndex: 0 },
+          data: { status: 'BOT', isActive: true, flowStepIndex: 0, currentIterationIndex: -1 },
         });
         this.contextCache.invalidate(conversation.id);
         conversation.status = 'BOT';
@@ -1412,6 +1521,28 @@ export class WebhookService {
     status: string;
     variables: Record<string, { name: string; type: string; value: string }>;
   }> {
+    // Lock para emulador também
+    const emulatorPhone = `emu_${sessionPhone}`;
+    const lockKey = `${botId}:${emulatorPhone}`;
+    const releaseLock = await this.acquireConversationLock(lockKey);
+
+    try {
+      return await this._processEmulatorMessageInternal(botId, text, sessionPhone);
+    } finally {
+      releaseLock();
+    }
+  }
+
+  private async _processEmulatorMessageInternal(
+    botId: string,
+    text: string,
+    sessionPhone: string,
+  ): Promise<{
+    messages: Array<{ content: string; direction: string; senderType: string; createdAt: Date }>;
+    conversationId: string;
+    status: string;
+    variables: Record<string, { name: string; type: string; value: string }>;
+  }> {
     const bot = await this.prisma.bot.findUnique({
       where: { id: botId },
       include: { whatsappChannel: true, aiConfig: true },
@@ -1456,7 +1587,7 @@ export class WebhookService {
     if (conversation.status === 'CLOSED') {
       await this.prisma.conversation.update({
         where: { id: conversation.id },
-        data: { status: 'BOT', isActive: true, flowStepIndex: 0 },
+        data: { status: 'BOT', isActive: true, flowStepIndex: 0, currentIterationIndex: -1 },
       });
       this.contextCache.invalidate(conversation.id);
       conversation.status = 'BOT';
@@ -1617,6 +1748,17 @@ export class WebhookService {
       const interpolated = await this.interpolateVariables(responseText, conversation.id, context);
       const result = await this.messaging.sendTextMessage(channel, emulatorPhone, interpolated);
       await this.conversationService.saveMessage(conversation.id, 'OUTBOUND', interpolated, result?.messageId);
+
+      // Salvar aprendizado da interação (AI e HYBRID)
+      if (bot.responseMode === 'AI' || bot.responseMode === 'HYBRID') {
+        this.aiLearningService.saveInteractionLearning(
+          botId,
+          emulatorPhone,
+          text,
+          interpolated,
+          'Emulador',
+        ).catch((err) => this.logger.warn(`Erro ao salvar aprendizado: ${err.message}`));
+      }
     }
 
     return this.collectEmulatorResponse(conversation.id, messageCountBefore);
@@ -1638,6 +1780,7 @@ export class WebhookService {
           status: 'BOT',
           isActive: true,
           flowStepIndex: 0,
+          currentIterationIndex: -1,
           waitingForVariable: false,
           pendingVariableName: null,
           pendingVariableType: null,

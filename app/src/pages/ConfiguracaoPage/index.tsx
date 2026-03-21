@@ -141,8 +141,17 @@ export default function ConfiguracaoPage() {
       await loadInstance();
       // Automatically load QR code
       await handleLoadQr();
-    } catch (err) {
-      toast.error(extractApiError(err));
+    } catch (err: any) {
+      const status = err?.response?.status;
+      const message = extractApiError(err);
+      if (status === 403) {
+        toast.error(message, {
+          description: 'Acesse a página Financeiro para atualizar seu plano.',
+          duration: 8000,
+        });
+      } else {
+        toast.error(message);
+      }
     } finally {
       setCreating(false);
     }
@@ -270,6 +279,17 @@ export default function ConfiguracaoPage() {
         </div>
       </div>
 
+      {/* Plan inactive warning */}
+      {data && !data.planActive && (
+        <div className="configuracao__upgrade-hint" style={{ marginBottom: 16, padding: '12px 16px', background: 'rgba(248, 113, 113, 0.1)', borderColor: '#f87171' }}>
+          <XCircle size={15} color="#f87171" />
+          <span>
+            Seu plano está inativo. Para criar ou usar instâncias WhatsApp,{' '}
+            <a href="#/financeiro" className="configuracao__upgrade-link">atualize seu plano</a>.
+          </span>
+        </div>
+      )}
+
       {/* Instance Card */}
       <div className="configuracao__section">
         <div className="configuracao__section-header">
@@ -290,7 +310,7 @@ export default function ConfiguracaoPage() {
             <button
               className="btn btn-primary configuracao__create-btn"
               onClick={handleCreate}
-              disabled={creating}
+              disabled={creating || !data?.planActive}
             >
               {creating ? (
                 <><Loader2 size={15} className="animate-spin" /> Criando instância...</>

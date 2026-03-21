@@ -6,8 +6,11 @@ import { BroadcastService } from './broadcast.service';
 import { CreateBroadcastListDto, UpdateBroadcastListDto } from './dto/create-broadcast-list.dto';
 import { CreateBroadcastDto } from './dto/create-broadcast.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { PlanGuard } from '../common/guards/plan.guard';
+import { RequirePlanFeature } from '../common/guards/plan.guard';
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PlanGuard)
+@RequirePlanFeature('broadcast_lists', 'broadcasts')
 @Controller('bots/:botId')
 export class BroadcastController {
   constructor(private readonly service: BroadcastService) {}

@@ -2,10 +2,12 @@ import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards } from '@nes
 import { BotService } from './bot.service';
 import { CreateBotDto, UpdateBotDto } from './dto/bot.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { PlanGuard } from '../common/guards/plan.guard';
+import { RequirePlanFeature } from '../common/guards/plan.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 
 @Controller('bots')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PlanGuard)
 export class BotController {
   constructor(private botService: BotService) {}
 
@@ -20,16 +22,19 @@ export class BotController {
   }
 
   @Get('dashboard/overview')
+  @RequirePlanFeature('dashboard')
   getDashboardOverview(@CurrentUser('id') userId: string) {
     return this.botService.getDashboardOverview(userId);
   }
 
   @Get('reports/analytics')
+  @RequirePlanFeature('reports')
   getReportsAnalytics(@CurrentUser('id') userId: string) {
     return this.botService.getReportsAnalytics(userId);
   }
 
   @Get('reports/monthly')
+  @RequirePlanFeature('reports')
   getMonthlyMetrics(@CurrentUser('id') userId: string) {
     return this.botService.getMonthlyMetrics(userId);
   }

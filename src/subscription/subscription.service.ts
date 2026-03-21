@@ -9,6 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AsaasService } from './asaas.service';
 import { PLAN_CONFIGS } from '../common/plans/plan-config';
 import { SubscriptionPlan } from '@prisma/client';
+import { CreditCardDto, CreditCardHolderInfoDto } from './dto/subscription.dto';
 
 @Injectable()
 export class SubscriptionService {
@@ -52,7 +53,14 @@ export class SubscriptionService {
     };
   }
 
-  async subscribe(userId: string, plan: 'PRO' | 'ENTERPRISE', billingType: string, cpfCnpj: string) {
+  async subscribe(
+    userId: string,
+    plan: 'PRO' | 'ENTERPRISE',
+    billingType: string,
+    cpfCnpj: string,
+    creditCard?: CreditCardDto,
+    creditCardHolderInfo?: CreditCardHolderInfoDto,
+  ) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       include: { subscription: true },
@@ -61,6 +69,10 @@ export class SubscriptionService {
 
     if (user.subscription?.status === 'ACTIVE' && user.plan === plan) {
       throw new BadRequestException('Você já possui uma assinatura ativa deste plano');
+    }
+
+    if (billingType === 'CREDIT_CARD' && (!creditCard || !creditCardHolderInfo)) {
+      throw new BadRequestException('Dados do cartão de crédito são obrigatórios para este método de pagamento');
     }
 
     const config = PLAN_CONFIGS[plan as SubscriptionPlan];
@@ -108,12 +120,14 @@ export class SubscriptionService {
       cycle: 'MONTHLY',
       description: `Dear-Bot Plano ${config.name}`,
       externalReference: userId,
+      creditCard,
+      creditCardHolderInfo,
     });
 
     // Salvar ou atualizar subscription no banco
     const subscriptionData = {
       plan: plan as SubscriptionPlan,
-      status: 'ACTIVE' as const,
+      status: billingType === 'CREDIT_CARD' ? 'ACTIVE' as const : 'ACTIVE' as const,
       value: config.price,
       billingType,
       asaasSubscriptionId: asaasSubscription.id,
@@ -140,17 +154,78 @@ export class SubscriptionService {
       data: {
         plan: plan as SubscriptionPlan,
         planActive: true,
-        planExpiresAt: null, // Planos pagos não expiram por tempo
+        planExpiresAt: null,
       },
     });
 
-    this.logger.log(`Usuário ${userId} assinou plano ${plan}`);
+    this.logger.log(`Usuário ${userId} assinou plano ${plan} via ${billingType}`);
+
+    // Buscar dados do pagamento gerado pela assinatura
+    let paymentInfo: any = null;
+    try {
+      const payments = await this.asaas.getSubscriptionPayments(asaasSubscription.id);
+      const firstPayment = payments?.data?.[0];
+
+      if (firstPayment) {
+        if (billingType === 'PIX') {
+          try {
+            const pixData = await this.asaas.getPaymentPixQrCode(firstPayment.id);
+            paymentInfo = {
+              paymentId: firstPayment.id,
+              status: firstPayment.status,
+              value: firstPayment.value,
+              dueDate: firstPayment.dueDate,
+              invoiceUrl: firstPayment.invoiceUrl,
+              pix: {
+                encodedImage: pixData.encodedImage,
+                payload: pixData.payload,
+                expirationDate: pixData.expirationDate,
+              },
+            };
+          } catch (err) {
+            this.logger.warn(`Falha ao buscar QR Code PIX: ${err.message}`);
+            paymentInfo = {
+              paymentId: firstPayment.id,
+              status: firstPayment.status,
+              value: firstPayment.value,
+              dueDate: firstPayment.dueDate,
+              invoiceUrl: firstPayment.invoiceUrl,
+            };
+          }
+        } else if (billingType === 'CREDIT_CARD') {
+          paymentInfo = {
+            paymentId: firstPayment.id,
+            status: firstPayment.status,
+            value: firstPayment.value,
+            dueDate: firstPayment.dueDate,
+            invoiceUrl: firstPayment.invoiceUrl,
+            creditCard: {
+              creditCardBrand: firstPayment.creditCard?.creditCardBrand,
+              creditCardNumber: firstPayment.creditCard?.creditCardNumber,
+            },
+          };
+        } else {
+          paymentInfo = {
+            paymentId: firstPayment.id,
+            status: firstPayment.status,
+            value: firstPayment.value,
+            dueDate: firstPayment.dueDate,
+            invoiceUrl: firstPayment.invoiceUrl,
+            bankSlipUrl: firstPayment.bankSlipUrl,
+          };
+        }
+      }
+    } catch (err) {
+      this.logger.warn(`Falha ao buscar dados do pagamento: ${err.message}`);
+    }
+
     return {
       message: `Assinatura do plano ${config.name} criada com sucesso`,
       plan,
       subscriptionId: asaasSubscription.id,
       value: config.price,
       billingType,
+      payment: paymentInfo,
     };
   }
 
@@ -186,6 +261,25 @@ export class SubscriptionService {
     return { message: 'Assinatura cancelada. Você foi movido para o plano Tester.' };
   }
 
+  async getPaymentHistory(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { subscription: true },
+    });
+    if (!user) throw new NotFoundException('Usuário não encontrado');
+    if (!user.subscription?.asaasSubscriptionId) {
+      return { data: [] };
+    }
+
+    try {
+      const payments = await this.asaas.getSubscriptionPayments(user.subscription.asaasSubscriptionId);
+      return payments;
+    } catch (err) {
+      this.logger.warn(`Falha ao buscar histórico de pagamentos: ${err.message}`);
+      return { data: [] };
+    }
+  }
+
   // ─── Webhook do Asaas ──────────────────────────────────────────────────────
 
   async handlePaymentWebhook(event: string, payment: any) {
@@ -210,7 +304,6 @@ export class SubscriptionService {
     switch (event) {
       case 'PAYMENT_CONFIRMED':
       case 'PAYMENT_RECEIVED': {
-        // Pagamento confirmado - ativar acesso
         await this.prisma.subscription.update({
           where: { id: subscription.id },
           data: {
@@ -228,7 +321,6 @@ export class SubscriptionService {
       }
 
       case 'PAYMENT_OVERDUE': {
-        // Pagamento vencido - bloquear acesso imediatamente
         await this.prisma.subscription.update({
           where: { id: subscription.id },
           data: { status: 'OVERDUE' },
@@ -243,7 +335,6 @@ export class SubscriptionService {
 
       case 'PAYMENT_DELETED':
       case 'PAYMENT_REFUNDED': {
-        // Pagamento removido ou reembolsado - bloquear
         await this.prisma.subscription.update({
           where: { id: subscription.id },
           data: { status: 'OVERDUE' },
@@ -257,7 +348,6 @@ export class SubscriptionService {
       }
 
       case 'PAYMENT_CREDIT_CARD_CAPTURE_REFUSED': {
-        // Falha no cartão - bloquear
         await this.prisma.subscription.update({
           where: { id: subscription.id },
           data: { status: 'OVERDUE' },
@@ -325,7 +415,7 @@ export class SubscriptionService {
 
     const config = PLAN_CONFIGS[user.plan];
     if (config.maxDailyMessages === -1) {
-      return { allowed: true, remaining: -1 }; // ilimitado
+      return { allowed: true, remaining: -1 };
     }
 
     const today = new Date();

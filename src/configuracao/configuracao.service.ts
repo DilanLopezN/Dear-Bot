@@ -120,7 +120,20 @@ export class ConfiguracaoService {
 
       this.logger.log(`Instância '${instanceName}' criada com sucesso para usuário ${userId}`);
 
-      return { instance, evolutionData: result };
+      // Normaliza QR code da resposta de criação
+      const qrcode = result?.qrcode || result;
+      const qrBase64 = qrcode?.base64 || result?.base64 || null;
+      const qrCode = qrcode?.code || result?.code || null;
+      const pairingCode = result?.pairingCode || qrcode?.pairingCode || null;
+
+      this.logger.log(
+        `QR Code na criação: base64=${!!qrBase64}, code=${!!qrCode}, pairingCode=${!!pairingCode}`,
+      );
+
+      return {
+        instance,
+        evolutionData: { base64: qrBase64, code: qrCode, pairingCode },
+      };
     } catch (error) {
       const statusCode = error?.response?.status;
       const detail = error?.response?.data

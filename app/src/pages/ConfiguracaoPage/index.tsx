@@ -106,7 +106,7 @@ export default function ConfiguracaoPage() {
     loadInstance();
   }, [loadInstance]);
 
-  // Auto-refresh status when QRCODE or CONNECTING
+  // Auto-refresh status and QR code when QRCODE or CONNECTING
   useEffect(() => {
     if (!data?.instance) return;
     const status = data.instance.status;
@@ -125,13 +125,26 @@ export default function ConfiguracaoPage() {
           if (newStatus === 'CONNECTED') {
             toast.success('WhatsApp conectado com sucesso!');
             setQrData(null);
+            return;
           }
+        }
+
+        // Auto-refresh QR code (expires every ~40s)
+        if (qrData || status === 'QRCODE') {
+          try {
+            const result = await api.getConfigInstanceQrCode();
+            const qrBase64 = result?.base64 || result?.pairingCode;
+            const qrCode = result?.code;
+            if (qrBase64 || qrCode) {
+              setQrData({ base64: qrBase64, code: qrCode });
+            }
+          } catch {}
         }
       } catch {}
     }, 5000);
 
     return () => clearInterval(interval);
-  }, [data?.instance?.status]);
+  }, [data?.instance?.status, qrData]);
 
   const handleCreate = async () => {
     setCreating(true);
@@ -162,8 +175,8 @@ export default function ConfiguracaoPage() {
     setQrData(null);
     try {
       const result = await api.getConfigInstanceQrCode();
-      const qrBase64 = result?.base64 || result?.qrcode?.base64 || result?.pairingCode;
-      const qrCode = result?.code || result?.qrcode?.code;
+      const qrBase64 = result?.base64 || result?.pairingCode;
+      const qrCode = result?.code;
       if (qrBase64 || qrCode) {
         setQrData({ base64: qrBase64, code: qrCode });
       } else {

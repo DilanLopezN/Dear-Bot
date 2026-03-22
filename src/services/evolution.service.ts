@@ -31,7 +31,7 @@ export class EvolutionService {
         webhook: {
           url: webhookUrl,
           byEvents: false,
-          base64: false,
+          base64: true,
           events: [
             'MESSAGES_UPSERT',
             'MESSAGES_UPDATE',
@@ -52,9 +52,17 @@ export class EvolutionService {
     const client = this.getClient(baseUrl, apiKey);
     try {
       const response = await client.get(`/instance/connect/${instanceName}`);
+      this.logger.log(
+        `QR Code raw response for '${instanceName}': keys=${JSON.stringify(Object.keys(response.data || {}))}` +
+        `, hasBase64=${!!(response.data?.base64 || response.data?.qrcode?.base64)}` +
+        `, hasCode=${!!(response.data?.code || response.data?.qrcode?.code)}`,
+      );
       return response.data;
     } catch (error) {
-      this.logger.error(`Erro ao obter QR Code: ${error.message}`);
+      const detail = error?.response?.data
+        ? JSON.stringify(error.response.data)
+        : error.message;
+      this.logger.error(`Erro ao obter QR Code para '${instanceName}': ${detail}`);
       throw error;
     }
   }
@@ -192,7 +200,7 @@ export class EvolutionService {
         enabled: true,
         url: webhookUrl,
         webhookByEvents: false,
-        webhookBase64: false,
+        webhookBase64: true,
         events: [
           'MESSAGES_UPSERT',
           'MESSAGES_UPDATE',

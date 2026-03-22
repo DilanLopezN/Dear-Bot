@@ -1,5 +1,6 @@
 import { Controller, Post, Delete, Param, Body, Logger, HttpCode } from '@nestjs/common';
 import { WebhookService } from './webhook.service';
+import { PrismaService } from '../prisma/prisma.service';
 
 /**
  * Payload do Dialog360 webhook (Cloud API format)
@@ -50,7 +51,10 @@ interface EvolutionWebhookPayload {
 export class WebhookController {
   private readonly logger = new Logger(WebhookController.name);
 
-  constructor(private webhookService: WebhookService) {}
+  constructor(
+    private webhookService: WebhookService,
+    private prisma: PrismaService,
+  ) {}
 
   /** Dialog360 webhook endpoint */
   @Post(':botId')
@@ -112,6 +116,42 @@ export class WebhookController {
           }
         }
       }
+    }
+
+    return { status: 'ok' };
+  }
+
+  /** Evolution API global webhook — handles CONNECTION_UPDATE for user instances */
+  @Post('evolution-global/:userId')
+  @HttpCode(200)
+  async handleEvolutionGlobalWebhook(
+    @Param('userId') userId: string,
+    @Body() payload: EvolutionWebhookPayload,
+  ) {
+    this.logger.log(`Evolution global webhook para usuário ${userId} — evento: ${payload.event}`);
+
+    if (payload.event === 'connection.update' || payload.event === 'CONNECTION_UPDATE') {
+      const state = payload.data?.state || payload.data?.instance?.state;
+      this.logger.log(`CONNECTION_UPDATE para usuário ${userId}: state=${state}`);
+
+      let newStatus = 'CONNECTING';
+      if (state === 'open') newStatus = 'CONNECTED';
+      else if (state === 'close') newStatus = 'DISCONNECTED';
+
+      try {
+        await this.prisma.evolutionInstance.updateMany({
+          where: { userId },
+          data: { status: newStatus },
+        });
+        this.logger.log(`Status da instância do usuário ${userId} atualizado para ${newStatus}`);
+      } catch (err) {
+        this.logger.error(`Erro ao atualizar status da instância: ${err.message}`);
+      }
+    }
+
+    // Forward MESSAGES_UPSERT to bot-specific handler if needed
+    if (payload.event === 'messages.upsert' || payload.event === 'MESSAGES_UPSERT') {
+      this.logger.log(`Mensagem recebida via webhook global do usuário ${userId}`);
     }
 
     return { status: 'ok' };

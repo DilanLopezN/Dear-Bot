@@ -1,5 +1,6 @@
 import { Controller, Post, Delete, Param, Body, Logger, HttpCode } from '@nestjs/common';
 import { WebhookService } from './webhook.service';
+import { PrismaService } from '../prisma/prisma.service';
 
 /**
  * Payload do Dialog360 webhook (Cloud API format)
@@ -50,7 +51,40 @@ interface EvolutionWebhookPayload {
 export class WebhookController {
   private readonly logger = new Logger(WebhookController.name);
 
-  constructor(private webhookService: WebhookService) {}
+  constructor(
+    private webhookService: WebhookService,
+    private prisma: PrismaService,
+  ) {}
+
+  /** Evolution API global webhook (CONNECTION_UPDATE, etc.) */
+  @Post('evolution-global/:userId')
+  @HttpCode(200)
+  async handleEvolutionGlobalWebhook(
+    @Param('userId') userId: string,
+    @Body() payload: EvolutionWebhookPayload,
+  ) {
+    this.logger.log(`Evolution global webhook para usuário ${userId} — evento: ${payload.event}`);
+
+    if (payload.event === 'connection.update' || payload.event === 'CONNECTION_UPDATE') {
+      const data = payload.data;
+      const state = data?.state || data?.instance?.state;
+
+      let status: string | undefined;
+      if (state === 'open') status = 'CONNECTED';
+      else if (state === 'close') status = 'DISCONNECTED';
+      else if (state === 'connecting') status = 'CONNECTING';
+
+      if (status) {
+        await this.prisma.evolutionInstance.updateMany({
+          where: { userId },
+          data: { status },
+        });
+        this.logger.log(`Status da instância do usuário ${userId} atualizado para ${status}`);
+      }
+    }
+
+    return { status: 'ok' };
+  }
 
   /** Dialog360 webhook endpoint */
   @Post(':botId')

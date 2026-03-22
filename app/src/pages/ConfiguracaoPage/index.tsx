@@ -136,11 +136,20 @@ export default function ConfiguracaoPage() {
   const handleCreate = async () => {
     setCreating(true);
     try {
-      await api.createConfigInstance();
+      const createResult = await api.createConfigInstance();
       toast.success('Instância criada! Escaneie o QR Code para conectar o WhatsApp.');
       await loadInstance();
-      // Automatically load QR code
-      await handleLoadQr();
+
+      // Try to extract QR code from creation response first
+      const evoData = createResult?.evolutionData;
+      const createQr =
+        evoData?.qrcode?.base64 || evoData?.base64 || evoData?.qrcode;
+      if (createQr && typeof createQr === 'string') {
+        setQrData({ base64: createQr, code: evoData?.qrcode?.code });
+      } else {
+        // Fallback: fetch QR code separately
+        await handleLoadQr();
+      }
     } catch (err: any) {
       const status = err?.response?.status;
       const message = extractApiError(err);

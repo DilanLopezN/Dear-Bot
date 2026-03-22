@@ -152,6 +152,18 @@ export class ConfiguracaoService {
     try {
       const result = await this.evolution.getQrCode(baseUrl, apiKey, instance.instanceName);
 
+      this.logger.log(`QR Code response keys for ${instance.instanceName}: ${JSON.stringify(Object.keys(result || {}))}`);
+
+      // Normaliza a resposta do Evolution API (v2.x pode retornar em formatos diferentes)
+      const qrcode = result?.qrcode || result;
+      const base64 = qrcode?.base64 || result?.base64 || null;
+      const code = qrcode?.code || result?.code || null;
+      const pairingCode = qrcode?.pairingCode || result?.pairingCode || null;
+
+      if (!base64 && !code && !pairingCode) {
+        this.logger.warn(`QR Code vazio para ${instance.instanceName}. Response: ${JSON.stringify(result)}`);
+      }
+
       // Atualiza status para QRCODE se ainda não conectado
       if (instance.status !== 'CONNECTED') {
         await this.prisma.evolutionInstance.update({
@@ -160,9 +172,12 @@ export class ConfiguracaoService {
         });
       }
 
-      return result;
+      return { base64, code, pairingCode };
     } catch (error) {
-      this.logger.error(`Erro ao obter QR Code para usuário ${userId}: ${error.message}`);
+      const detail = error?.response?.data
+        ? JSON.stringify(error.response.data)
+        : error.message;
+      this.logger.error(`Erro ao obter QR Code para usuário ${userId}: ${detail}`);
       throw new BadRequestException(`Falha ao obter QR Code: ${error.message}`);
     }
   }

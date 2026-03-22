@@ -126,11 +126,19 @@ export class WhatsappChannelService {
     const evolutionApiUrl = channel.evolutionApiUrl || this.config.get<string>('EVOLUTION_API_URL')?.trim()?.replace(/\/+$/, '');
     const evolutionApiKey = channel.evolutionApiKey || this.config.get<string>('EVOLUTION_API_KEY')?.trim();
 
-    return this.evolution.getQrCode(
+    const result = await this.evolution.getQrCode(
       evolutionApiUrl!,
       evolutionApiKey!,
       channel.evolutionInstance!,
     );
+
+    // Normaliza a resposta do Evolution API (v2.x pode retornar em formatos diferentes)
+    const qrcode = result?.qrcode || result;
+    const base64 = qrcode?.base64 || result?.base64 || null;
+    const code = qrcode?.code || result?.code || null;
+    const pairingCode = qrcode?.pairingCode || result?.pairingCode || null;
+
+    return { base64, code, pairingCode };
   }
 
   /** Verifica estado da conexão Evolution API */

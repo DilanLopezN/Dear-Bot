@@ -133,6 +133,25 @@ export default function ConfiguracaoPage() {
     return () => clearInterval(interval);
   }, [data?.instance?.status]);
 
+  // Auto-refresh QR code every 30s (it expires every ~40s)
+  useEffect(() => {
+    if (!data?.instance) return;
+    const status = data.instance.status;
+    if (status !== 'QRCODE' && status !== 'CONNECTING') return;
+    if (!qrData) return; // Only refresh if QR is already being shown
+
+    const interval = setInterval(async () => {
+      try {
+        const result = await api.getConfigInstanceQrCode();
+        if (result?.base64 || result?.code || result?.pairingCode) {
+          setQrData({ base64: result.base64, code: result.code || result.pairingCode });
+        }
+      } catch {}
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, [data?.instance?.status, !!qrData]);
+
   const handleCreate = async () => {
     setCreating(true);
     try {
@@ -142,10 +161,8 @@ export default function ConfiguracaoPage() {
 
       // Try to extract QR code from creation response first
       const evoData = createResult?.evolutionData;
-      const createQr =
-        evoData?.qrcode?.base64 || evoData?.base64 || evoData?.qrcode;
-      if (createQr && typeof createQr === 'string') {
-        setQrData({ base64: createQr, code: evoData?.qrcode?.code });
+      if (evoData?.base64 || evoData?.code || evoData?.pairingCode) {
+        setQrData({ base64: evoData.base64, code: evoData.code || evoData.pairingCode });
       } else {
         // Fallback: fetch QR code separately
         await handleLoadQr();
@@ -171,10 +188,8 @@ export default function ConfiguracaoPage() {
     setQrData(null);
     try {
       const result = await api.getConfigInstanceQrCode();
-      const qrBase64 = result?.base64 || result?.qrcode?.base64 || result?.pairingCode;
-      const qrCode = result?.code || result?.qrcode?.code;
-      if (qrBase64 || qrCode) {
-        setQrData({ base64: qrBase64, code: qrCode });
+      if (result?.base64 || result?.code || result?.pairingCode) {
+        setQrData({ base64: result.base64, code: result.code || result.pairingCode });
       } else {
         toast.info('QR Code ainda não disponível. Aguarde alguns segundos e tente novamente.');
       }
@@ -246,7 +261,7 @@ export default function ConfiguracaoPage() {
   const StatusIcon = statusConfig?.icon;
 
   const isConnected = instance?.status === 'CONNECTED';
-  const needsQr = instance?.status === 'QRCODE' || instance?.status === 'DISCONNECTED';
+  const needsQr = instance?.status === 'QRCODE' || instance?.status === 'DISCONNECTED' || instance?.status === 'CONNECTING';
 
   return (
     <div className="page-container configuracao">

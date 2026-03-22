@@ -31,7 +31,7 @@ export class EvolutionService {
         webhook: {
           url: webhookUrl,
           byEvents: false,
-          base64: false,
+          base64: true,
           events: ["MESSAGES_UPSERT", "MESSAGES_UPDATE", "CONNECTION_UPDATE"],
         },
       });
@@ -48,7 +48,19 @@ export class EvolutionService {
     const client = this.getClient(baseUrl, apiKey);
     try {
       const response = await client.get(`/instance/connect/${instanceName}`);
-      return response.data;
+      const result = response.data;
+
+      // Normaliza resposta — Evolution API v2 retorna em diferentes estruturas
+      const qrcode = result?.qrcode || result;
+      const base64 = qrcode?.base64 || result?.base64 || null;
+      const code = qrcode?.code || result?.code || null;
+      const pairingCode = result?.pairingCode || qrcode?.pairingCode || null;
+
+      this.logger.log(
+        `QR Code para '${instanceName}': base64=${!!base64}, code=${!!code}, pairingCode=${!!pairingCode}`,
+      );
+
+      return { base64, code, pairingCode };
     } catch (error) {
       this.logger.error(`Erro ao obter QR Code: ${error.message}`);
       throw error;
@@ -202,7 +214,7 @@ export class EvolutionService {
           enabled: true,
           url: webhookUrl,
           webhookByEvents: false,
-          webhookBase64: false,
+          webhookBase64: true,
           events: ["MESSAGES_UPSERT", "MESSAGES_UPDATE", "CONNECTION_UPDATE"],
         },
       });

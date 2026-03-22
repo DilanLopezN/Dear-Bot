@@ -685,6 +685,52 @@ class ApiService {
     return data;
   }
 
+  // ── Subscription / Plans ─────────────────────────────────────────────────
+
+  async getPlans() {
+    const { data } = await this.client.get('/subscription/plans');
+    return data;
+  }
+
+  async getUserSubscription() {
+    const { data } = await this.client.get('/subscription');
+    return data;
+  }
+
+  async subscribe(payload: {
+    plan: 'PRO' | 'ENTERPRISE';
+    billingType: 'PIX' | 'CREDIT_CARD' | 'BOLETO';
+    cpfCnpj: string;
+    creditCard?: {
+      holderName: string;
+      number: string;
+      expiryMonth: string;
+      expiryYear: string;
+      ccv: string;
+    };
+    creditCardHolderInfo?: {
+      name: string;
+      email: string;
+      cpfCnpj: string;
+      postalCode: string;
+      addressNumber: string;
+      phone: string;
+    };
+  }) {
+    const { data } = await this.client.post('/subscription', payload);
+    return data;
+  }
+
+  async cancelSubscription() {
+    const { data } = await this.client.delete('/subscription');
+    return data;
+  }
+
+  async getPaymentHistory() {
+    const { data } = await this.client.get('/subscription/payments');
+    return data;
+  }
+
   // ── Configuração / Evolution Instance ────────────────────────────────────
 
   async getConfigInstance() {

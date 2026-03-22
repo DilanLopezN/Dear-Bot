@@ -40,15 +40,29 @@ export class WhatsappChannelService {
       const baseUrl = this.config.get('WEBHOOK_BASE_URL');
 
       if (provider === 'EVOLUTION') {
-        if (!dto.evolutionApiUrl || !dto.evolutionApiKey || !dto.evolutionInstance) {
-          throw new BadRequestException('evolutionApiUrl, evolutionApiKey e evolutionInstance são obrigatórios para Evolution API');
+        // Usa a instância global do usuário (Configuração)
+        const globalInstance = await this.prisma.evolutionInstance.findFirst({
+          where: { userId },
+        });
+
+        if (!globalInstance) {
+          throw new BadRequestException(
+            'Nenhuma instância Evolution configurada. Vá em Configuração para criar sua instância WhatsApp primeiro.',
+          );
         }
 
-        // Configura webhook na Evolution
+        const evolutionApiUrl = this.config.get<string>('EVOLUTION_API_URL')?.trim()?.replace(/\/+$/, '');
+        const evolutionApiKey = this.config.get<string>('EVOLUTION_API_KEY')?.trim();
+
+        if (!evolutionApiUrl || !evolutionApiKey) {
+          throw new BadRequestException('Evolution API não configurada no servidor.');
+        }
+
+        // Configura webhook na Evolution para este bot
         await this.evolution.setWebhook(
-          dto.evolutionApiUrl,
-          dto.evolutionApiKey,
-          dto.evolutionInstance,
+          evolutionApiUrl,
+          evolutionApiKey,
+          globalInstance.instanceName,
           `${baseUrl}/webhook/evolution/${botId}`,
         );
 
@@ -57,14 +71,14 @@ export class WhatsappChannelService {
             botId,
             phoneNumber: dto.phoneNumber,
             provider: 'EVOLUTION',
-            evolutionApiUrl: dto.evolutionApiUrl,
-            evolutionApiKey: dto.evolutionApiKey,
-            evolutionInstance: dto.evolutionInstance,
+            evolutionApiUrl,
+            evolutionApiKey,
+            evolutionInstance: globalInstance.instanceName,
             webhookSecret,
           },
         });
 
-        this.logger.log(`Canal WhatsApp (Evolution) criado com sucesso para bot ${botId}`);
+        this.logger.log(`Canal WhatsApp (Evolution) criado com sucesso para bot ${botId} usando instância global '${globalInstance.instanceName}'`);
         return channel;
       }
 
@@ -109,9 +123,12 @@ export class WhatsappChannelService {
       throw new BadRequestException('Canal Evolution não encontrado');
     }
 
+    const evolutionApiUrl = channel.evolutionApiUrl || this.config.get<string>('EVOLUTION_API_URL')?.trim()?.replace(/\/+$/, '');
+    const evolutionApiKey = channel.evolutionApiKey || this.config.get<string>('EVOLUTION_API_KEY')?.trim();
+
     return this.evolution.getQrCode(
-      channel.evolutionApiUrl!,
-      channel.evolutionApiKey!,
+      evolutionApiUrl!,
+      evolutionApiKey!,
       channel.evolutionInstance!,
     );
   }
@@ -128,9 +145,12 @@ export class WhatsappChannelService {
       throw new BadRequestException('Canal Evolution não encontrado');
     }
 
+    const evolutionApiUrl = channel.evolutionApiUrl || this.config.get<string>('EVOLUTION_API_URL')?.trim()?.replace(/\/+$/, '');
+    const evolutionApiKey = channel.evolutionApiKey || this.config.get<string>('EVOLUTION_API_KEY')?.trim();
+
     return this.evolution.getConnectionState(
-      channel.evolutionApiUrl!,
-      channel.evolutionApiKey!,
+      evolutionApiUrl!,
+      evolutionApiKey!,
       channel.evolutionInstance!,
     );
   }
@@ -160,14 +180,18 @@ export class WhatsappChannelService {
         where: { botId },
       });
 
-      // Tenta remover instância na Evolution se aplicável
-      if (channel?.provider === 'EVOLUTION' && channel.evolutionApiUrl && channel.evolutionApiKey && channel.evolutionInstance) {
+      // Tenta desconectar da Evolution se aplicável (não deleta a instância global)
+      if (channel?.provider === 'EVOLUTION' && channel.evolutionInstance) {
         try {
-          await this.evolution.logoutInstance(
-            channel.evolutionApiUrl,
-            channel.evolutionApiKey,
-            channel.evolutionInstance,
-          );
+          const evolutionApiUrl = channel.evolutionApiUrl || this.config.get<string>('EVOLUTION_API_URL')?.trim()?.replace(/\/+$/, '');
+          const evolutionApiKey = channel.evolutionApiKey || this.config.get<string>('EVOLUTION_API_KEY')?.trim();
+          if (evolutionApiUrl && evolutionApiKey) {
+            await this.evolution.logoutInstance(
+              evolutionApiUrl,
+              evolutionApiKey,
+              channel.evolutionInstance,
+            );
+          }
         } catch (e) {
           this.logger.warn(`Falha ao desconectar instância Evolution: ${e.message}`);
         }

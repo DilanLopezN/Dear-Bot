@@ -894,17 +894,29 @@ function WhatsAppModal({ open, onClose, bot }: { open: boolean; onClose: () => v
       phoneNumber: '',
       provider: 'EVOLUTION' as 'DIALOG360' | 'EVOLUTION',
       dialog360ApiKey: '',
-      evolutionApiUrl: '',
-      evolutionApiKey: '',
-      evolutionInstance: '',
     },
   });
   const [saving, setSaving] = useState(false);
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [connectionState, setConnectionState] = useState<string | null>(null);
+  const [globalInstance, setGlobalInstance] = useState<{ instanceName: string; status: string } | null>(null);
+  const [loadingInstance, setLoadingInstance] = useState(false);
   const { fetchBots } = useBotStore();
   const hasChannel = !!bot.whatsappChannel;
   const provider = watch('provider');
+
+  // Carregar instância global do usuário quando o modal abre
+  useEffect(() => {
+    if (open && !hasChannel) {
+      setLoadingInstance(true);
+      api.getConfigInstance()
+        .then((res: any) => {
+          setGlobalInstance(res?.instance || null);
+        })
+        .catch(() => setGlobalInstance(null))
+        .finally(() => setLoadingInstance(false));
+    }
+  }, [open, hasChannel]);
 
   const onSubmit = async (data: any) => {
     setSaving(true);
@@ -915,11 +927,8 @@ function WhatsAppModal({ open, onClose, bot }: { open: boolean; onClose: () => v
       };
       if (data.provider === 'DIALOG360') {
         payload.dialog360ApiKey = data.dialog360ApiKey;
-      } else {
-        payload.evolutionApiUrl = data.evolutionApiUrl;
-        payload.evolutionApiKey = data.evolutionApiKey;
-        payload.evolutionInstance = data.evolutionInstance;
       }
+      // Para EVOLUTION, o backend usará a instância global automaticamente
       await api.createWhatsappChannel(bot.id, payload);
       await fetchBots();
       toast.success('WhatsApp conectado com sucesso!');
@@ -932,7 +941,7 @@ function WhatsAppModal({ open, onClose, bot }: { open: boolean; onClose: () => v
             setQrCode(qr.base64 || qr.code);
           }
         } catch {
-          toast.success('Canal criado! Use o QR Code na Evolution API para conectar.');
+          toast.success('Canal criado! Use o QR Code na página Configuração para conectar.');
         }
       } else {
         onClose();
@@ -1061,28 +1070,33 @@ function WhatsAppModal({ open, onClose, bot }: { open: boolean; onClose: () => v
             </FormField>
           ) : (
             <>
-              <FormField label="URL da Evolution API" error={errors.evolutionApiUrl?.message}>
-                <div className="input-wrapper">
-                  <span className="input-icon"><Zap size={16} /></span>
-                  <input {...register('evolutionApiUrl', { required: provider === 'EVOLUTION' ? 'Obrigatório' : false })} placeholder="https://sua-evolution-api.com" className="form-input with-icon" />
+              {loadingInstance ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 0', color: 'var(--color-text-muted)', fontSize: 13 }}>
+                  <Loader2 size={14} className="animate-spin" /> Carregando instância...
                 </div>
-              </FormField>
-              <FormField label="Global API Key" error={errors.evolutionApiKey?.message}>
-                <div className="input-wrapper">
-                  <span className="input-icon"><Key size={16} /></span>
-                  <input {...register('evolutionApiKey', { required: provider === 'EVOLUTION' ? 'Obrigatório' : false })} placeholder="Sua API Key da Evolution" className="form-input with-icon" />
+              ) : globalInstance ? (
+                <div style={{ padding: '10px 12px', background: 'rgba(74, 222, 128, 0.08)', borderRadius: 8, border: '1px solid rgba(74, 222, 128, 0.2)', marginBottom: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 500, color: '#4ade80', marginBottom: 4 }}>
+                    <Zap size={14} /> Instância Evolution configurada
+                  </div>
+                  <p style={{ fontSize: 12, color: 'var(--color-text-muted)', margin: 0 }}>
+                    Instância: <code style={{ fontSize: 11 }}>{globalInstance.instanceName}</code> — Status: {globalInstance.status}
+                  </p>
                 </div>
-              </FormField>
-              <FormField label="Nome da Instância" error={errors.evolutionInstance?.message}>
-                <div className="input-wrapper">
-                  <span className="input-icon"><MessageSquare size={16} /></span>
-                  <input {...register('evolutionInstance', { required: provider === 'EVOLUTION' ? 'Obrigatório' : false })} placeholder="minha-instancia" className="form-input with-icon" />
+              ) : (
+                <div style={{ padding: '10px 12px', background: 'rgba(251, 146, 60, 0.08)', borderRadius: 8, border: '1px solid rgba(251, 146, 60, 0.2)', marginBottom: 8 }}>
+                  <p style={{ fontSize: 13, color: '#fb923c', fontWeight: 500, margin: '0 0 4px 0' }}>
+                    Nenhuma instância configurada
+                  </p>
+                  <p style={{ fontSize: 12, color: 'var(--color-text-muted)', margin: 0 }}>
+                    Vá em <a href="#/configuracao" style={{ color: 'var(--color-accent)' }}>Configuração</a> para criar sua instância WhatsApp primeiro.
+                  </p>
                 </div>
-              </FormField>
+              )}
             </>
           )}
 
-          <button type="submit" disabled={saving} className="btn btn-primary" style={{ width: '100%', marginTop: 8 }}>
+          <button type="submit" disabled={saving || (provider === 'EVOLUTION' && !globalInstance)} className="btn btn-primary" style={{ width: '100%', marginTop: 8 }}>
             {saving && <Loader2 size={15} className="animate-spin" />}
             Conectar WhatsApp
           </button>

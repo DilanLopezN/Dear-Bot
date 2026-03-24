@@ -44,7 +44,7 @@ export class AsaasService {
   private api: AxiosInstance;
 
   constructor(private config: ConfigService) {
-    const baseURL = this.config.get<string>('ASAAS_API_URL', 'https://api-sandbox.asaas.com');
+    const baseURL = this.config.get<string>('ASAAS_API_URL', 'https://sandbox.asaas.com/api/v3');
     const apiKey = this.config.get<string>('ASAAS_API_KEY', '');
 
     this.api = axios.create({
@@ -59,7 +59,7 @@ export class AsaasService {
   async createCustomer(data: CreateCustomerDto) {
     this.logger.log(`Criando cliente no Asaas: ${data.email}`);
     try {
-      const response = await this.api.post('/v3/customers', {
+      const response = await this.api.post('/customers', {
         name: data.name,
         email: data.email,
         cpfCnpj: data.cpfCnpj,
@@ -76,7 +76,7 @@ export class AsaasService {
 
   async findCustomerByEmail(email: string) {
     try {
-      const response = await this.api.get('/v3/customers', {
+      const response = await this.api.get('/customers', {
         params: { email },
       });
       return response.data?.data?.[0] || null;
@@ -104,7 +104,7 @@ export class AsaasService {
         payload.creditCardHolderInfo = data.creditCardHolderInfo;
       }
 
-      const response = await this.api.post('/v3/subscriptions', payload);
+      const response = await this.api.post('/subscriptions', payload);
       this.logger.log(`Assinatura criada no Asaas: ${response.data.id}`);
       return response.data;
     } catch (err) {
@@ -115,7 +115,7 @@ export class AsaasService {
 
   async getSubscription(subscriptionId: string) {
     try {
-      const response = await this.api.get(`/v3/subscriptions/${subscriptionId}`);
+      const response = await this.api.get(`/subscriptions/${subscriptionId}`);
       return response.data;
     } catch (err) {
       this.logger.error(`Erro ao buscar assinatura ${subscriptionId}: ${err.message}`);
@@ -126,7 +126,7 @@ export class AsaasService {
   async cancelSubscription(subscriptionId: string) {
     this.logger.log(`Cancelando assinatura no Asaas: ${subscriptionId}`);
     try {
-      const response = await this.api.delete(`/v3/subscriptions/${subscriptionId}`);
+      const response = await this.api.delete(`/subscriptions/${subscriptionId}`);
       return response.data;
     } catch (err) {
       this.logger.error(`Erro ao cancelar assinatura: ${err.message}`);
@@ -136,7 +136,7 @@ export class AsaasService {
 
   async getSubscriptionPayments(subscriptionId: string) {
     try {
-      const response = await this.api.get(`/v3/subscriptions/${subscriptionId}/payments`);
+      const response = await this.api.get(`/subscriptions/${subscriptionId}/payments`);
       return response.data;
     } catch (err) {
       this.logger.error(`Erro ao buscar pagamentos da assinatura: ${err.message}`);
@@ -146,7 +146,7 @@ export class AsaasService {
 
   async getPayment(paymentId: string) {
     try {
-      const response = await this.api.get(`/v3/payments/${paymentId}`);
+      const response = await this.api.get(`/payments/${paymentId}`);
       return response.data;
     } catch (err) {
       this.logger.error(`Erro ao buscar pagamento ${paymentId}: ${err.message}`);
@@ -156,7 +156,7 @@ export class AsaasService {
 
   async getPaymentPixQrCode(paymentId: string) {
     try {
-      const response = await this.api.get(`/v3/payments/${paymentId}/pixQrCode`);
+      const response = await this.api.get(`/payments/${paymentId}/pixQrCode`);
       return response.data;
     } catch (err) {
       this.logger.error(`Erro ao buscar QR Code PIX do pagamento ${paymentId}: ${err.message}`);
@@ -166,7 +166,7 @@ export class AsaasService {
 
   async updateSubscription(subscriptionId: string, data: Partial<CreateSubscriptionDto>) {
     try {
-      const response = await this.api.put(`/v3/subscriptions/${subscriptionId}`, data);
+      const response = await this.api.put(`/subscriptions/${subscriptionId}`, data);
       return response.data;
     } catch (err) {
       this.logger.error(`Erro ao atualizar assinatura: ${err.message}`);

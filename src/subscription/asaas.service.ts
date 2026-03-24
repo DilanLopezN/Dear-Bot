@@ -164,6 +164,33 @@ export class AsaasService {
     }
   }
 
+  async getSubscriptionPaymentsWithRetry(subscriptionId: string, maxRetries = 3, delayMs = 1500): Promise<any> {
+    for (let i = 0; i < maxRetries; i++) {
+      const payments = await this.getSubscriptionPayments(subscriptionId);
+      if (payments?.data?.length > 0) return payments;
+      if (i < maxRetries - 1) {
+        this.logger.log(`Pagamentos ainda não disponíveis, tentativa ${i + 1}/${maxRetries}...`);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
+    }
+    return { data: [] };
+  }
+
+  async getPaymentPixQrCodeWithRetry(paymentId: string, maxRetries = 3, delayMs = 1500): Promise<any> {
+    for (let i = 0; i < maxRetries; i++) {
+      try {
+        return await this.getPaymentPixQrCode(paymentId);
+      } catch (err) {
+        if (i < maxRetries - 1) {
+          this.logger.log(`QR Code PIX ainda não disponível, tentativa ${i + 1}/${maxRetries}...`);
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+        } else {
+          throw err;
+        }
+      }
+    }
+  }
+
   async updateSubscription(subscriptionId: string, data: Partial<CreateSubscriptionDto>) {
     try {
       const response = await this.api.put(`/subscriptions/${subscriptionId}`, data);

@@ -560,6 +560,25 @@
   opacity: 0.8;
 }
 
+.pix-qr-fallback {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 20px;
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  text-align: center;
+}
+
+.pix-qr-fallback p {
+  font-size: 13px;
+  color: var(--color-text-muted);
+  margin: 0;
+  line-height: 1.5;
+}
+
 .checkout-invoice-link {
   font-size: 13px;
   color: var(--color-accent);

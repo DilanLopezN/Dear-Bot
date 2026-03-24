@@ -152,7 +152,6 @@ function CheckoutModal({
       const data = await api.subscribe({ plan: plan.plan as 'PRO' | 'ENTERPRISE', billingType: 'PIX', cpfCnpj: cpfCnpj.replace(/\D/g, '') });
       setResult(data);
       setStep('pix-result');
-      onSuccess();
     } catch (err) {
       setError(extractApiError(err));
     } finally {
@@ -211,7 +210,6 @@ function CheckoutModal({
       const data = await api.subscribe({ plan: plan.plan as 'PRO' | 'ENTERPRISE', billingType: 'BOLETO', cpfCnpj: cpfCnpj.replace(/\D/g, '') });
       setResult(data);
       setStep('boleto-result');
-      onSuccess();
     } catch (err) {
       setError(extractApiError(err));
     } finally {
@@ -396,7 +394,7 @@ function CheckoutModal({
               Após o pagamento ser confirmado, seu plano será ativado automaticamente.
             </p>
 
-            <button className="btn-primary checkout-btn" onClick={onClose}>Fechar</button>
+            <button className="btn-primary checkout-btn" onClick={() => { onSuccess(); onClose(); }}>Fechar</button>
           </div>
         )}
 
@@ -431,10 +429,15 @@ function CheckoutModal({
             <div className="checkout-success-icon"><CheckCircle size={36} color="#4ade80" /></div>
             <h3 className="checkout-result-title">Boleto gerado!</h3>
             <p className="checkout-result-subtitle">Pague o boleto para ativar seu plano {plan.name}.</p>
-            {result.payment?.bankSlipUrl && (
+            {result.payment?.bankSlipUrl ? (
               <a className="checkout-invoice-link checkout-boleto-btn" href={result.payment.bankSlipUrl} target="_blank" rel="noopener noreferrer">
                 Abrir boleto
               </a>
+            ) : (
+              <div className="pix-qr-fallback">
+                <AlertCircle size={24} color="#fbbf24" />
+                <p>Boleto ainda está sendo gerado. Acesse a fatura abaixo para visualizar.</p>
+              </div>
             )}
             {result.payment?.identificationField && (
               <div className="pix-copy-wrap">
@@ -454,7 +457,7 @@ function CheckoutModal({
               </a>
             )}
             <p className="checkout-result-note">Após o pagamento compensar (até 3 dias úteis), seu plano será ativado.</p>
-            <button className="btn-primary checkout-btn" onClick={onClose}>Fechar</button>
+            <button className="btn-primary checkout-btn" onClick={() => { onSuccess(); onClose(); }}>Fechar</button>
           </div>
         )}
       </div>

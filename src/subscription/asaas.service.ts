@@ -164,7 +164,7 @@ export class AsaasService {
     }
   }
 
-  async getSubscriptionPaymentsWithRetry(subscriptionId: string, maxRetries = 3, delayMs = 1500): Promise<any> {
+  async getSubscriptionPaymentsWithRetry(subscriptionId: string, maxRetries = 5, delayMs = 2000): Promise<any> {
     for (let i = 0; i < maxRetries; i++) {
       const payments = await this.getSubscriptionPayments(subscriptionId);
       if (payments?.data?.length > 0) return payments;
@@ -176,13 +176,34 @@ export class AsaasService {
     return { data: [] };
   }
 
-  async getPaymentPixQrCodeWithRetry(paymentId: string, maxRetries = 3, delayMs = 1500): Promise<any> {
+  async getPaymentPixQrCodeWithRetry(paymentId: string, maxRetries = 5, delayMs = 2000): Promise<any> {
     for (let i = 0; i < maxRetries; i++) {
       try {
         return await this.getPaymentPixQrCode(paymentId);
       } catch (err) {
         if (i < maxRetries - 1) {
           this.logger.log(`QR Code PIX ainda não disponível, tentativa ${i + 1}/${maxRetries}...`);
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+        } else {
+          throw err;
+        }
+      }
+    }
+  }
+
+  async getPaymentWithRetry(paymentId: string, maxRetries = 5, delayMs = 2000): Promise<any> {
+    for (let i = 0; i < maxRetries; i++) {
+      try {
+        const payment = await this.getPayment(paymentId);
+        if (payment?.bankSlipUrl || payment?.identificationField) return payment;
+        if (i < maxRetries - 1) {
+          this.logger.log(`Dados do boleto ainda não disponíveis, tentativa ${i + 1}/${maxRetries}...`);
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+        } else {
+          return payment;
+        }
+      } catch (err) {
+        if (i < maxRetries - 1) {
           await new Promise(resolve => setTimeout(resolve, delayMs));
         } else {
           throw err;

@@ -51,6 +51,7 @@ interface PaymentResult {
   subscriptionId: string;
   value: number;
   billingType: string;
+  status: 'ACTIVE' | 'PENDING';
   payment: {
     paymentId: string;
     status: string;
@@ -59,6 +60,7 @@ interface PaymentResult {
     invoiceUrl?: string;
     pix?: PixData;
     bankSlipUrl?: string;
+    identificationField?: string;
     creditCard?: { creditCardBrand?: string; creditCardNumber?: string };
   } | null;
 }
@@ -92,7 +94,7 @@ const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   OVERDUE: { label: 'Inadimplente', color: '#f87171' },
   EXPIRED: { label: 'Expirado', color: '#f87171' },
   CANCELLED: { label: 'Cancelado', color: '#94a3b8' },
-  PENDING: { label: 'Aguardando', color: '#fbbf24' },
+  PENDING: { label: 'Aguardando Pagamento', color: '#fbbf24' },
   RECEIVED: { label: 'Recebido', color: '#4ade80' },
   CONFIRMED: { label: 'Confirmado', color: '#4ade80' },
 };
@@ -356,13 +358,18 @@ function CheckoutModal({
             <h3 className="checkout-result-title">Assinatura criada!</h3>
             <p className="checkout-result-subtitle">Escaneie o QR Code ou copie o código PIX para pagar</p>
 
-            {result.payment?.pix?.encodedImage && (
+            {result.payment?.pix?.encodedImage ? (
               <div className="pix-qr-wrap">
                 <img
                   src={`data:image/png;base64,${result.payment.pix.encodedImage}`}
                   alt="QR Code PIX"
                   className="pix-qr-image"
                 />
+              </div>
+            ) : (
+              <div className="pix-qr-fallback">
+                <AlertCircle size={24} color="#fbbf24" />
+                <p>QR Code indisponível no momento. Use o código Copia e Cola abaixo ou acesse a fatura.</p>
               </div>
             )}
 
@@ -406,6 +413,9 @@ function CheckoutModal({
                 {result.payment.creditCard.creditCardBrand} •••• {result.payment.creditCard.creditCardNumber}
               </p>
             )}
+            <p className="checkout-result-note">
+              Sua assinatura é recorrente e será cobrada mensalmente no valor de R$ {plan.price}.
+            </p>
             {result.payment?.invoiceUrl && (
               <a className="checkout-invoice-link" href={result.payment.invoiceUrl} target="_blank" rel="noopener noreferrer">
                 Ver fatura
@@ -425,6 +435,18 @@ function CheckoutModal({
               <a className="checkout-invoice-link checkout-boleto-btn" href={result.payment.bankSlipUrl} target="_blank" rel="noopener noreferrer">
                 Abrir boleto
               </a>
+            )}
+            {result.payment?.identificationField && (
+              <div className="pix-copy-wrap">
+                <p className="checkout-label">Linha Digitável (Copia e Cola)</p>
+                <div className="pix-copy-row">
+                  <span className="pix-copy-code">{result.payment.identificationField}</span>
+                  <button className="pix-copy-btn" onClick={() => handleCopy(result.payment!.identificationField!)}>
+                    {copied ? <CheckCircle size={14} /> : <Copy size={14} />}
+                    {copied ? 'Copiado!' : 'Copiar'}
+                  </button>
+                </div>
+              </div>
             )}
             {result.payment?.invoiceUrl && (
               <a className="checkout-invoice-link" href={result.payment.invoiceUrl} target="_blank" rel="noopener noreferrer">

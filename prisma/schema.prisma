@@ -32,6 +32,7 @@ enum SubscriptionPlan {
 }
 
 enum SubscriptionStatus {
+  PENDING
   ACTIVE
   OVERDUE
   EXPIRED

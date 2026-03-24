@@ -127,7 +127,7 @@ export class SubscriptionService {
     // Salvar ou atualizar subscription no banco
     const subscriptionData = {
       plan: plan as SubscriptionPlan,
-      status: billingType === 'CREDIT_CARD' ? 'ACTIVE' as const : 'ACTIVE' as const,
+      status: billingType === 'CREDIT_CARD' ? 'ACTIVE' as const : 'PENDING' as const,
       value: config.price,
       billingType,
       asaasSubscriptionId: asaasSubscription.id,
@@ -149,11 +149,13 @@ export class SubscriptionService {
     }
 
     // Atualizar plano do usuário
+    // Para PIX/BOLETO: plan é definido mas planActive fica false até confirmação do pagamento via webhook
+    // Para CREDIT_CARD: cobrança é imediata, então planActive = true
     await this.prisma.user.update({
       where: { id: userId },
       data: {
         plan: plan as SubscriptionPlan,
-        planActive: true,
+        planActive: billingType === 'CREDIT_CARD',
         planExpiresAt: null,
       },
     });
@@ -163,13 +165,13 @@ export class SubscriptionService {
     // Buscar dados do pagamento gerado pela assinatura
     let paymentInfo: any = null;
     try {
-      const payments = await this.asaas.getSubscriptionPayments(asaasSubscription.id);
+      const payments = await this.asaas.getSubscriptionPaymentsWithRetry(asaasSubscription.id);
       const firstPayment = payments?.data?.[0];
 
       if (firstPayment) {
         if (billingType === 'PIX') {
           try {
-            const pixData = await this.asaas.getPaymentPixQrCode(firstPayment.id);
+            const pixData = await this.asaas.getPaymentPixQrCodeWithRetry(firstPayment.id);
             paymentInfo = {
               paymentId: firstPayment.id,
               status: firstPayment.status,
@@ -205,6 +207,14 @@ export class SubscriptionService {
             },
           };
         } else {
+          // BOLETO - buscar também a linha digitável
+          let identificationField: string | undefined;
+          try {
+            const fullPayment = await this.asaas.getPayment(firstPayment.id);
+            identificationField = fullPayment.identificationField;
+          } catch {
+            this.logger.warn('Falha ao buscar linha digitável do boleto');
+          }
           paymentInfo = {
             paymentId: firstPayment.id,
             status: firstPayment.status,
@@ -212,6 +222,7 @@ export class SubscriptionService {
             dueDate: firstPayment.dueDate,
             invoiceUrl: firstPayment.invoiceUrl,
             bankSlipUrl: firstPayment.bankSlipUrl,
+            identificationField,
           };
         }
       }
@@ -225,6 +236,7 @@ export class SubscriptionService {
       subscriptionId: asaasSubscription.id,
       value: config.price,
       billingType,
+      status: billingType === 'CREDIT_CARD' ? 'ACTIVE' : 'PENDING',
       payment: paymentInfo,
     };
   }
@@ -314,9 +326,12 @@ export class SubscriptionService {
         });
         await this.prisma.user.update({
           where: { id: subscription.userId },
-          data: { planActive: true },
+          data: {
+            plan: subscription.plan,
+            planActive: true,
+          },
         });
-        this.logger.log(`Pagamento confirmado para usuário ${subscription.userId}`);
+        this.logger.log(`Pagamento confirmado para usuário ${subscription.userId} - plano ${subscription.plan} ativado`);
         break;
       }
 
@@ -397,6 +412,10 @@ export class SubscriptionService {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) return { allowed: false, message: 'Usuário não encontrado' };
 
+    if (!user.planActive) {
+      return { allowed: false, message: 'Seu plano ainda não foi ativado. Aguarde a confirmação do pagamento.' };
+    }
+
     const config = PLAN_CONFIGS[user.plan];
     const botCount = await this.prisma.bot.count({ where: { userId } });
 
@@ -412,6 +431,10 @@ export class SubscriptionService {
   async checkDailyMessageLimit(userId: string): Promise<{ allowed: boolean; remaining: number; message?: string }> {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) return { allowed: false, remaining: 0, message: 'Usuário não encontrado' };
+
+    if (!user.planActive) {
+      return { allowed: false, remaining: 0, message: 'Seu plano ainda não foi ativado. Aguarde a confirmação do pagamento.' };
+    }
 
     const config = PLAN_CONFIGS[user.plan];
     if (config.maxDailyMessages === -1) {

@@ -108,8 +108,12 @@ export class SubscriptionService {
     }
 
     // Criar assinatura no Asaas
+    // Para PIX/BOLETO: vencimento hoje para gerar QR Code e boleto imediatamente
+    // Para CREDIT_CARD: cobrança imediata, mas nextDueDate define o ciclo
     const nextDueDate = new Date();
-    nextDueDate.setDate(nextDueDate.getDate() + 1); // Primeiro pagamento amanhã
+    if (billingType === 'CREDIT_CARD') {
+      nextDueDate.setDate(nextDueDate.getDate() + 1);
+    }
     const formattedDate = nextDueDate.toISOString().slice(0, 10);
 
     const asaasSubscription = await this.asaas.createSubscription({
@@ -149,16 +153,20 @@ export class SubscriptionService {
     }
 
     // Atualizar plano do usuário
-    // Para PIX/BOLETO: plan é definido mas planActive fica false até confirmação do pagamento via webhook
-    // Para CREDIT_CARD: cobrança é imediata, então planActive = true
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: {
-        plan: plan as SubscriptionPlan,
-        planActive: billingType === 'CREDIT_CARD',
-        planExpiresAt: null,
-      },
-    });
+    // Para CREDIT_CARD: cobrança é imediata, atualiza plano e ativa
+    // Para PIX/BOLETO: NÃO atualizar plano ainda - manter plano atual até confirmação do pagamento via webhook
+    // O plano alvo fica salvo na subscription e será aplicado quando o webhook PAYMENT_CONFIRMED chegar
+    if (billingType === 'CREDIT_CARD') {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: {
+          plan: plan as SubscriptionPlan,
+          planActive: true,
+          planExpiresAt: null,
+        },
+      });
+    }
+    // Para PIX/BOLETO: não mexe no user.plan nem no planActive - o usuário mantém acesso ao plano atual
 
     this.logger.log(`Usuário ${userId} assinou plano ${plan} via ${billingType}`);
 
@@ -207,23 +215,29 @@ export class SubscriptionService {
             },
           };
         } else {
-          // BOLETO - buscar também a linha digitável
-          let identificationField: string | undefined;
+          // BOLETO - buscar dados completos com retry (bankSlipUrl e linha digitável podem demorar)
           try {
-            const fullPayment = await this.asaas.getPayment(firstPayment.id);
-            identificationField = fullPayment.identificationField;
+            const fullPayment = await this.asaas.getPaymentWithRetry(firstPayment.id);
+            paymentInfo = {
+              paymentId: firstPayment.id,
+              status: firstPayment.status,
+              value: firstPayment.value,
+              dueDate: firstPayment.dueDate,
+              invoiceUrl: fullPayment?.invoiceUrl || firstPayment.invoiceUrl,
+              bankSlipUrl: fullPayment?.bankSlipUrl || firstPayment.bankSlipUrl,
+              identificationField: fullPayment?.identificationField,
+            };
           } catch {
-            this.logger.warn('Falha ao buscar linha digitável do boleto');
+            this.logger.warn('Falha ao buscar dados completos do boleto');
+            paymentInfo = {
+              paymentId: firstPayment.id,
+              status: firstPayment.status,
+              value: firstPayment.value,
+              dueDate: firstPayment.dueDate,
+              invoiceUrl: firstPayment.invoiceUrl,
+              bankSlipUrl: firstPayment.bankSlipUrl,
+            };
           }
-          paymentInfo = {
-            paymentId: firstPayment.id,
-            status: firstPayment.status,
-            value: firstPayment.value,
-            dueDate: firstPayment.dueDate,
-            invoiceUrl: firstPayment.invoiceUrl,
-            bankSlipUrl: firstPayment.bankSlipUrl,
-            identificationField,
-          };
         }
       }
     } catch (err) {
@@ -329,6 +343,7 @@ export class SubscriptionService {
           data: {
             plan: subscription.plan,
             planActive: true,
+            planExpiresAt: null,
           },
         });
         this.logger.log(`Pagamento confirmado para usuário ${subscription.userId} - plano ${subscription.plan} ativado`);

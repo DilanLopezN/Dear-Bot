@@ -737,6 +737,11 @@ class ApiService {
     return data;
   }
 
+  async getSubscriptionStatus() {
+    const { data } = await this.client.get('/subscription/status');
+    return data;
+  }
+
   // ── Configuração / Evolution Instance ────────────────────────────────────
 
   async getConfigInstance() {

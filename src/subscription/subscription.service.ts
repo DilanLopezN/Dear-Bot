@@ -67,8 +67,16 @@ export class SubscriptionService {
     });
     if (!user) throw new NotFoundException('Usuário não encontrado');
 
+    // Bloquear se já possui assinatura ativa do mesmo plano
     if (user.subscription?.status === 'ACTIVE' && user.plan === plan) {
       throw new BadRequestException('Você já possui uma assinatura ativa deste plano');
+    }
+
+    // Bloquear se já existe um pagamento pendente (só permite um por vez)
+    if (user.subscription?.status === 'PENDING') {
+      throw new BadRequestException(
+        'Você já possui um pagamento pendente. Aguarde a confirmação ou cancele a assinatura atual antes de criar uma nova.',
+      );
     }
 
     if (billingType === 'CREDIT_CARD' && (!creditCard || !creditCardHolderInfo)) {
@@ -313,23 +321,44 @@ export class SubscriptionService {
     this.logger.log(`Evento: ${event} | Payment ID: ${payment?.id} | Status: ${payment?.status}`);
     this.logger.log(`Subscription ID: ${payment?.subscription} | Value: ${payment?.value} | Billing: ${payment?.billingType}`);
     this.logger.log(`Due Date: ${payment?.dueDate} | Customer: ${payment?.customer}`);
+    this.logger.log(`External Reference: ${payment?.externalReference}`);
     this.logger.log(`=====================================`);
 
+    // Buscar subscription no banco - tentar por subscription ID primeiro, depois por externalReference (userId)
+    let subscription: any = null;
+
     const subscriptionId = payment?.subscription;
-    if (!subscriptionId) {
-      this.logger.warn(`Webhook sem subscription ID, ignorando. Payment ID: ${payment?.id}`);
-      return;
+    if (subscriptionId) {
+      subscription = await this.prisma.subscription.findUnique({
+        where: { asaasSubscriptionId: subscriptionId },
+        include: { user: true },
+      });
     }
 
-    const subscription = await this.prisma.subscription.findUnique({
-      where: { asaasSubscriptionId: subscriptionId },
-      include: { user: true },
-    });
+    // Fallback: buscar por externalReference (userId) caso subscription ID não bata
+    if (!subscription && payment?.externalReference) {
+      this.logger.log(`Tentando buscar assinatura por externalReference (userId): ${payment.externalReference}`);
+      subscription = await this.prisma.subscription.findUnique({
+        where: { userId: payment.externalReference },
+        include: { user: true },
+      });
+
+      // Atualizar o asaasSubscriptionId se encontrou por fallback e o subscription ID é diferente
+      if (subscription && subscriptionId && subscription.asaasSubscriptionId !== subscriptionId) {
+        this.logger.log(`Atualizando asaasSubscriptionId de ${subscription.asaasSubscriptionId} para ${subscriptionId}`);
+        await this.prisma.subscription.update({
+          where: { id: subscription.id },
+          data: { asaasSubscriptionId: subscriptionId },
+        });
+      }
+    }
 
     if (!subscription) {
-      this.logger.warn(`Assinatura ${subscriptionId} não encontrada no banco`);
+      this.logger.warn(`Assinatura não encontrada no banco. Subscription ID: ${subscriptionId}, External Ref: ${payment?.externalReference}`);
       return;
     }
+
+    this.logger.log(`Assinatura encontrada: ${subscription.id} | Plano alvo: ${subscription.plan} | Usuário: ${subscription.userId}`);
 
     switch (event) {
       case 'PAYMENT_CONFIRMED':

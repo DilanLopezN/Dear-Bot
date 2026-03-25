@@ -65,6 +65,12 @@ export class SubscriptionController {
     return this.subscriptionService.getPaymentHistory(userId);
   }
 
+  @Get('status')
+  @UseGuards(JwtAuthGuard)
+  getSubscriptionStatus(@CurrentUser('id') userId: string) {
+    return this.subscriptionService.getUserSubscription(userId);
+  }
+
   // ─── Webhook público do Asaas ─────────────────────────────────────────────
 
   @Post('webhook/asaas')

@@ -117,6 +117,26 @@ function CheckoutModal({
   const [error, setError] = useState('');
   const [result, setResult] = useState<PaymentResult | null>(null);
   const [copied, setCopied] = useState(false);
+  const [paymentConfirmed, setPaymentConfirmed] = useState(false);
+
+  // Polling para verificar se o pagamento foi confirmado (PIX/Boleto)
+  useEffect(() => {
+    if (!result || result.status !== 'PENDING') return;
+    if (paymentConfirmed) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const status = await api.getSubscriptionStatus();
+        if (status?.subscription?.status === 'ACTIVE' && status?.planActive) {
+          setPaymentConfirmed(true);
+          clearInterval(interval);
+          onSuccess();
+        }
+      } catch { /* ignore polling errors */ }
+    }, 5000); // Poll every 5 seconds
+
+    return () => clearInterval(interval);
+  }, [result, paymentConfirmed, onSuccess]);
 
   // Credit card fields
   const [cardHolder, setCardHolder] = useState('');
@@ -352,49 +372,63 @@ function CheckoutModal({
         {/* Step: PIX result */}
         {step === 'pix-result' && result && (
           <div className="checkout-body checkout-result">
-            <div className="checkout-success-icon"><CheckCircle size={36} color="#4ade80" /></div>
-            <h3 className="checkout-result-title">Assinatura criada!</h3>
-            <p className="checkout-result-subtitle">Escaneie o QR Code ou copie o código PIX para pagar</p>
-
-            {result.payment?.pix?.encodedImage ? (
-              <div className="pix-qr-wrap">
-                <img
-                  src={`data:image/png;base64,${result.payment.pix.encodedImage}`}
-                  alt="QR Code PIX"
-                  className="pix-qr-image"
-                />
-              </div>
+            {paymentConfirmed ? (
+              <>
+                <div className="checkout-success-icon"><CheckCircle size={36} color="#4ade80" /></div>
+                <h3 className="checkout-result-title">Pagamento confirmado!</h3>
+                <p className="checkout-result-subtitle">
+                  Seu plano {plan.name} foi ativado com sucesso.
+                </p>
+                <button className="btn-primary checkout-btn" onClick={onClose}>Fechar</button>
+              </>
             ) : (
-              <div className="pix-qr-fallback">
-                <AlertCircle size={24} color="#fbbf24" />
-                <p>QR Code indisponível no momento. Use o código Copia e Cola abaixo ou acesse a fatura.</p>
-              </div>
+              <>
+                <div className="checkout-success-icon"><CheckCircle size={36} color="#4ade80" /></div>
+                <h3 className="checkout-result-title">Assinatura criada!</h3>
+                <p className="checkout-result-subtitle">Escaneie o QR Code ou copie o código PIX para pagar</p>
+
+                {result.payment?.pix?.encodedImage ? (
+                  <div className="pix-qr-wrap">
+                    <img
+                      src={`data:image/png;base64,${result.payment.pix.encodedImage}`}
+                      alt="QR Code PIX"
+                      className="pix-qr-image"
+                    />
+                  </div>
+                ) : (
+                  <div className="pix-qr-fallback">
+                    <AlertCircle size={24} color="#fbbf24" />
+                    <p>QR Code indisponível no momento. Use o código Copia e Cola abaixo ou acesse a fatura.</p>
+                  </div>
+                )}
+
+                {result.payment?.pix?.payload && (
+                  <div className="pix-copy-wrap">
+                    <p className="checkout-label">Código Copia e Cola</p>
+                    <div className="pix-copy-row">
+                      <span className="pix-copy-code">{result.payment.pix.payload.slice(0, 40)}...</span>
+                      <button className="pix-copy-btn" onClick={() => handleCopy(result.payment!.pix!.payload)}>
+                        {copied ? <CheckCircle size={14} /> : <Copy size={14} />}
+                        {copied ? 'Copiado!' : 'Copiar'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {result.payment?.invoiceUrl && (
+                  <a className="checkout-invoice-link" href={result.payment.invoiceUrl} target="_blank" rel="noopener noreferrer">
+                    Abrir fatura completa
+                  </a>
+                )}
+
+                <p className="checkout-result-note">
+                  <Loader2 size={14} className="spin" style={{ display: 'inline', verticalAlign: 'middle', marginRight: 6 }} />
+                  Aguardando confirmação do pagamento... Seu plano será ativado automaticamente.
+                </p>
+
+                <button className="btn-ghost checkout-btn-secondary" onClick={() => { onSuccess(); onClose(); }}>Fechar</button>
+              </>
             )}
-
-            {result.payment?.pix?.payload && (
-              <div className="pix-copy-wrap">
-                <p className="checkout-label">Código Copia e Cola</p>
-                <div className="pix-copy-row">
-                  <span className="pix-copy-code">{result.payment.pix.payload.slice(0, 40)}...</span>
-                  <button className="pix-copy-btn" onClick={() => handleCopy(result.payment!.pix!.payload)}>
-                    {copied ? <CheckCircle size={14} /> : <Copy size={14} />}
-                    {copied ? 'Copiado!' : 'Copiar'}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {result.payment?.invoiceUrl && (
-              <a className="checkout-invoice-link" href={result.payment.invoiceUrl} target="_blank" rel="noopener noreferrer">
-                Abrir fatura completa
-              </a>
-            )}
-
-            <p className="checkout-result-note">
-              Após o pagamento ser confirmado, seu plano será ativado automaticamente.
-            </p>
-
-            <button className="btn-primary checkout-btn" onClick={() => { onSuccess(); onClose(); }}>Fechar</button>
           </div>
         )}
 
@@ -426,38 +460,54 @@ function CheckoutModal({
         {/* Step: Boleto result */}
         {step === 'boleto-result' && result && (
           <div className="checkout-body checkout-result">
-            <div className="checkout-success-icon"><CheckCircle size={36} color="#4ade80" /></div>
-            <h3 className="checkout-result-title">Boleto gerado!</h3>
-            <p className="checkout-result-subtitle">Pague o boleto para ativar seu plano {plan.name}.</p>
-            {result.payment?.bankSlipUrl ? (
-              <a className="checkout-invoice-link checkout-boleto-btn" href={result.payment.bankSlipUrl} target="_blank" rel="noopener noreferrer">
-                Abrir boleto
-              </a>
+            {paymentConfirmed ? (
+              <>
+                <div className="checkout-success-icon"><CheckCircle size={36} color="#4ade80" /></div>
+                <h3 className="checkout-result-title">Pagamento confirmado!</h3>
+                <p className="checkout-result-subtitle">
+                  Seu plano {plan.name} foi ativado com sucesso.
+                </p>
+                <button className="btn-primary checkout-btn" onClick={onClose}>Fechar</button>
+              </>
             ) : (
-              <div className="pix-qr-fallback">
-                <AlertCircle size={24} color="#fbbf24" />
-                <p>Boleto ainda está sendo gerado. Acesse a fatura abaixo para visualizar.</p>
-              </div>
+              <>
+                <div className="checkout-success-icon"><CheckCircle size={36} color="#4ade80" /></div>
+                <h3 className="checkout-result-title">Boleto gerado!</h3>
+                <p className="checkout-result-subtitle">Pague o boleto para ativar seu plano {plan.name}.</p>
+                {result.payment?.bankSlipUrl ? (
+                  <a className="checkout-invoice-link checkout-boleto-btn" href={result.payment.bankSlipUrl} target="_blank" rel="noopener noreferrer">
+                    Abrir boleto
+                  </a>
+                ) : (
+                  <div className="pix-qr-fallback">
+                    <AlertCircle size={24} color="#fbbf24" />
+                    <p>Boleto ainda está sendo gerado. Acesse a fatura abaixo para visualizar.</p>
+                  </div>
+                )}
+                {result.payment?.identificationField && (
+                  <div className="pix-copy-wrap">
+                    <p className="checkout-label">Linha Digitável (Copia e Cola)</p>
+                    <div className="pix-copy-row">
+                      <span className="pix-copy-code">{result.payment.identificationField}</span>
+                      <button className="pix-copy-btn" onClick={() => handleCopy(result.payment!.identificationField!)}>
+                        {copied ? <CheckCircle size={14} /> : <Copy size={14} />}
+                        {copied ? 'Copiado!' : 'Copiar'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {result.payment?.invoiceUrl && (
+                  <a className="checkout-invoice-link" href={result.payment.invoiceUrl} target="_blank" rel="noopener noreferrer">
+                    Ver fatura
+                  </a>
+                )}
+                <p className="checkout-result-note">
+                  <Loader2 size={14} className="spin" style={{ display: 'inline', verticalAlign: 'middle', marginRight: 6 }} />
+                  Aguardando confirmação do pagamento... Seu plano será ativado automaticamente.
+                </p>
+                <button className="btn-ghost checkout-btn-secondary" onClick={() => { onSuccess(); onClose(); }}>Fechar</button>
+              </>
             )}
-            {result.payment?.identificationField && (
-              <div className="pix-copy-wrap">
-                <p className="checkout-label">Linha Digitável (Copia e Cola)</p>
-                <div className="pix-copy-row">
-                  <span className="pix-copy-code">{result.payment.identificationField}</span>
-                  <button className="pix-copy-btn" onClick={() => handleCopy(result.payment!.identificationField!)}>
-                    {copied ? <CheckCircle size={14} /> : <Copy size={14} />}
-                    {copied ? 'Copiado!' : 'Copiar'}
-                  </button>
-                </div>
-              </div>
-            )}
-            {result.payment?.invoiceUrl && (
-              <a className="checkout-invoice-link" href={result.payment.invoiceUrl} target="_blank" rel="noopener noreferrer">
-                Ver fatura
-              </a>
-            )}
-            <p className="checkout-result-note">Após o pagamento compensar (até 3 dias úteis), seu plano será ativado.</p>
-            <button className="btn-primary checkout-btn" onClick={() => { onSuccess(); onClose(); }}>Fechar</button>
           </div>
         )}
       </div>
@@ -496,6 +546,22 @@ export default function FinanceiroPage() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  // Polling: auto-refresh when subscription is PENDING
+  useEffect(() => {
+    if (userSub?.subscription?.status !== 'PENDING') return;
+
+    const interval = setInterval(async () => {
+      try {
+        const status = await api.getSubscriptionStatus();
+        if (status?.subscription?.status === 'ACTIVE' && status?.planActive) {
+          load(); // Refresh everything
+        }
+      } catch { /* ignore */ }
+    }, 10000); // Poll every 10 seconds
+
+    return () => clearInterval(interval);
+  }, [userSub?.subscription?.status, load]);
 
   const currentPlan = userSub?.plan || 'TESTER';
   const PlanIcon = PLAN_DISPLAY[currentPlan as keyof typeof PLAN_DISPLAY]?.icon || Zap;
@@ -603,14 +669,16 @@ export default function FinanceiroPage() {
               </ul>
 
               <button
-                disabled={isCurrent || plan.plan === 'TESTER'}
-                className={`financeiro__plan-btn ${isCurrent || plan.plan === 'TESTER' ? 'financeiro__plan-btn--current' : 'financeiro__plan-btn--upgrade'}`}
-                onClick={() => !isCurrent && plan.plan !== 'TESTER' && setCheckoutPlan(plan)}
+                disabled={isCurrent || plan.plan === 'TESTER' || userSub?.subscription?.status === 'PENDING'}
+                className={`financeiro__plan-btn ${isCurrent || plan.plan === 'TESTER' || userSub?.subscription?.status === 'PENDING' ? 'financeiro__plan-btn--current' : 'financeiro__plan-btn--upgrade'}`}
+                onClick={() => !isCurrent && plan.plan !== 'TESTER' && userSub?.subscription?.status !== 'PENDING' && setCheckoutPlan(plan)}
               >
                 {isCurrent
                   ? 'Plano atual'
                   : plan.plan === 'TESTER'
                   ? 'Gratuito'
+                  : userSub?.subscription?.status === 'PENDING'
+                  ? 'Pagamento pendente'
                   : <><span>Fazer Upgrade</span> <ChevronRight size={15} /></>}
               </button>
             </div>

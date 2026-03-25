@@ -18,6 +18,7 @@ export interface KeywordMatchResult {
   response: string;
   goto?: KeywordGoto;
   captureVariable?: CaptureVariableConfig;
+  matchedTrigger?: string;
 }
 
 @Injectable()
@@ -33,10 +34,17 @@ export class KeywordService {
     this.logger.log(`Criando keyword "${dto.trigger}" no bot ${botId}`);
     try {
       await this.botService.findOne(userId, botId);
+
+      // Se triggers não foi fornecido, usar [trigger] como lista padrão
+      const triggers = dto.triggers && dto.triggers.length > 0
+        ? dto.triggers
+        : [dto.trigger];
+
       return await this.prisma.keyword.create({
         data: {
           botId,
           trigger: dto.trigger,
+          triggers,
           response: dto.response,
           priority: dto.priority,
           goto: dto.goto ? (dto.goto as any) : undefined,
@@ -64,14 +72,22 @@ export class KeywordService {
       const keyword = await this.prisma.keyword.findFirst({ where: { id: keywordId, botId } });
       if (!keyword) throw new NotFoundException('Keyword não encontrada');
 
-      const { captureVariable, ...rest } = dto;
+      const { captureVariable, triggers, ...rest } = dto;
+
+      // Se trigger principal mudou e triggers não foi fornecido, atualizar triggers também
+      const updateData: any = {
+        ...rest,
+        goto: dto.goto === null ? null : dto.goto ? (dto.goto as any) : undefined,
+        captureVariable: captureVariable === null ? null : captureVariable ? (captureVariable as any) : undefined,
+      };
+
+      if (triggers !== undefined) {
+        updateData.triggers = triggers;
+      }
+
       return await this.prisma.keyword.update({
         where: { id: keywordId },
-        data: {
-          ...rest,
-          goto: dto.goto === null ? null : dto.goto ? (dto.goto as any) : undefined,
-          captureVariable: captureVariable === null ? null : captureVariable ? (captureVariable as any) : undefined,
-        },
+        data: updateData,
       });
     } catch (err) {
       this.logger.error(`Erro ao atualizar keyword ${keywordId}`, err);
@@ -91,7 +107,8 @@ export class KeywordService {
   }
 
   async findByExactTrigger(botId: string, trigger: string) {
-    return this.prisma.keyword.findFirst({
+    // Primeiro tenta match exato pelo trigger principal
+    const exactMatch = await this.prisma.keyword.findFirst({
       where: {
         botId,
         isActive: true,
@@ -99,6 +116,23 @@ export class KeywordService {
       },
       orderBy: { priority: 'desc' },
     });
+    if (exactMatch) return exactMatch;
+
+    // Se não encontrou, busca nas listas de triggers
+    const allKeywords = await this.prisma.keyword.findMany({
+      where: { botId, isActive: true },
+      orderBy: { priority: 'desc' },
+    });
+
+    const normalizedTrigger = trigger.toLowerCase().trim();
+    for (const kw of allKeywords) {
+      if (kw.triggers && kw.triggers.length > 0) {
+        const found = kw.triggers.some(t => t.toLowerCase().trim() === normalizedTrigger);
+        if (found) return kw;
+      }
+    }
+
+    return null;
   }
 
   async findMatch(botId: string, message: string): Promise<KeywordMatchResult | null> {
@@ -109,14 +143,67 @@ export class KeywordService {
 
     const normalized = message.toLowerCase().trim();
     for (const kw of keywords) {
-      if (normalized.includes(kw.trigger.toLowerCase())) {
-        return {
-          response: kw.response,
-          goto: kw.goto as unknown as KeywordGoto | undefined,
-          captureVariable: kw.captureVariable as unknown as CaptureVariableConfig | undefined,
-        };
+      // Verificar nas triggers (lista de variações)
+      const allTriggers = kw.triggers && kw.triggers.length > 0
+        ? kw.triggers
+        : [kw.trigger];
+
+      for (const trigger of allTriggers) {
+        if (normalized.includes(trigger.toLowerCase())) {
+          return {
+            response: kw.response,
+            goto: kw.goto as unknown as KeywordGoto | undefined,
+            captureVariable: kw.captureVariable as unknown as CaptureVariableConfig | undefined,
+            matchedTrigger: trigger,
+          };
+        }
       }
     }
     return null;
+  }
+
+  /**
+   * Busca por match similar usando IA - para modos AI e HYBRID
+   * Retorna a keyword mais provável baseada na mensagem do usuário
+   */
+  async findSimilarMatch(botId: string, message: string, aiMatchFn: (message: string, keywords: Array<{ trigger: string; triggers: string[] }>) => Promise<string | null>): Promise<KeywordMatchResult | null> {
+    const keywords = await this.prisma.keyword.findMany({
+      where: { botId, isActive: true },
+      orderBy: { priority: 'desc' },
+    });
+
+    if (!keywords.length) return null;
+
+    const keywordList = keywords.map(kw => ({
+      trigger: kw.trigger,
+      triggers: kw.triggers && kw.triggers.length > 0 ? kw.triggers : [kw.trigger],
+    }));
+
+    const matchedTrigger = await aiMatchFn(message, keywordList);
+    if (!matchedTrigger) return null;
+
+    // Encontrar a keyword correspondente
+    const matchedKw = keywords.find(kw => {
+      const allTriggers = kw.triggers && kw.triggers.length > 0 ? kw.triggers : [kw.trigger];
+      return kw.trigger.toLowerCase() === matchedTrigger.toLowerCase() ||
+        allTriggers.some(t => t.toLowerCase() === matchedTrigger.toLowerCase());
+    });
+
+    if (!matchedKw) return null;
+
+    return {
+      response: matchedKw.response,
+      goto: matchedKw.goto as unknown as KeywordGoto | undefined,
+      captureVariable: matchedKw.captureVariable as unknown as CaptureVariableConfig | undefined,
+      matchedTrigger,
+    };
+  }
+
+  /**
+   * Gera variações de keyword usando IA
+   */
+  async generateAIKeywords(keyword: { trigger: string; triggers: string[] }): Promise<string[]> {
+    // Retorna a lista base - a geração real será feita pelo controller usando o AI service
+    return keyword.triggers.length > 0 ? keyword.triggers : [keyword.trigger];
   }
 }

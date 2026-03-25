@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsInt, IsBoolean, ValidateNested, IsEnum } from 'class-validator';
+import { IsString, IsOptional, IsInt, IsBoolean, ValidateNested, IsEnum, IsArray } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export enum GotoTargetType {
@@ -36,6 +36,11 @@ export class CreateKeywordDto {
   @IsString()
   trigger: string;
 
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  triggers?: string[];
+
   @IsString()
   response: string;
 
@@ -58,6 +63,11 @@ export class UpdateKeywordDto {
   @IsString()
   @IsOptional()
   trigger?: string;
+
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  triggers?: string[];
 
   @IsString()
   @IsOptional()

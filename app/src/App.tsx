@@ -15,6 +15,7 @@ import ScheduledMessagesPage from '@/pages/ScheduledMessagesPage';
 import BroadcastPage from '@/pages/BroadcastPage';
 import LeadsPage from '@/pages/LeadsPage';
 import ConfiguracaoPage from '@/pages/ConfiguracaoPage';
+import AdminPanel from '@/pages/AdminPanel';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuthStore();
@@ -56,6 +57,7 @@ export default function App() {
           <Route path="/ai-config" element={<AiConfigPage />} />
           <Route path="/configuracao" element={<ConfiguracaoPage />} />
         </Route>
+        <Route path="/d34r-s3cr3t-p4n3l" element={<AdminPanel />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </>

@@ -499,6 +499,12 @@ function KeywordsModal({ open, onClose, bot }: { open: boolean; onClose: () => v
   const [captureName, setCaptureName] = useState('');
   const [captureType, setCaptureType] = useState<CaptureVariable['type']>('STRING');
   const [capturePrompt, setCapturePrompt] = useState('');
+  const [triggerVariations, setTriggerVariations] = useState<string[]>([]);
+  const [variationInput, setVariationInput] = useState('');
+  const [enhancingId, setEnhancingId] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [editTriggersId, setEditTriggersId] = useState<string | null>(null);
+  const [editTriggersInput, setEditTriggersInput] = useState('');
 
   const botVariables = useMemo(() => collectBotVariables(iterations, keywords, menus), [iterations, keywords, menus]);
 
@@ -513,13 +519,24 @@ function KeywordsModal({ open, onClose, bot }: { open: boolean; onClose: () => v
   };
   useEffect(() => { if (open) load(); }, [open]);
 
+  const addVariation = () => {
+    const v = variationInput.trim().toLowerCase();
+    if (v && !triggerVariations.includes(v)) {
+      setTriggerVariations([...triggerVariations, v]);
+    }
+    setVariationInput('');
+  };
+
+  const removeVariation = (v: string) => setTriggerVariations(triggerVariations.filter(t => t !== v));
+
   const onAdd = async (data: any) => {
     const goto = gotoType && gotoTarget ? { type: gotoType, target: gotoTarget } : undefined;
     const captureVariable = captureEnabled && captureName.trim()
       ? { name: captureName.trim(), type: captureType, promptMessage: capturePrompt.trim() }
       : undefined;
+    const triggers = triggerVariations.length > 0 ? triggerVariations : undefined;
     try {
-      await api.createKeyword(bot.id, { ...data, priority: Number(data.priority) || 0, goto, captureVariable });
+      await api.createKeyword(bot.id, { ...data, priority: Number(data.priority) || 0, goto, captureVariable, triggers });
       toast.success('Keyword adicionada!');
       reset();
       setGotoType('');
@@ -528,6 +545,8 @@ function KeywordsModal({ open, onClose, bot }: { open: boolean; onClose: () => v
       setCaptureName('');
       setCaptureType('STRING');
       setCapturePrompt('');
+      setTriggerVariations([]);
+      setVariationInput('');
       load();
     } catch (err) {
       toast.error(`Erro ao adicionar keyword: ${extractApiError(err)}`);
@@ -544,14 +563,50 @@ function KeywordsModal({ open, onClose, bot }: { open: boolean; onClose: () => v
     }
   };
 
+  const onAiEnhance = async (kwId: string) => {
+    setEnhancingId(kwId);
+    try {
+      await api.aiEnhanceKeyword(bot.id, kwId);
+      toast.success('Variações geradas com IA!');
+      load();
+    } catch (err) {
+      toast.error(`Erro ao gerar variações: ${extractApiError(err)}`);
+    } finally {
+      setEnhancingId(null);
+    }
+  };
+
+  const addEditTrigger = async (kw: Keyword) => {
+    const v = editTriggersInput.trim().toLowerCase();
+    if (!v || (kw.triggers || []).includes(v)) { setEditTriggersInput(''); return; }
+    const newTriggers = [...(kw.triggers || []), v];
+    try {
+      await api.updateKeyword(bot.id, kw.id, { triggers: newTriggers });
+      setEditTriggersInput('');
+      load();
+    } catch (err) {
+      toast.error(`Erro ao adicionar variação: ${extractApiError(err)}`);
+    }
+  };
+
+  const removeEditTrigger = async (kw: Keyword, triggerToRemove: string) => {
+    const newTriggers = (kw.triggers || []).filter(t => t !== triggerToRemove);
+    try {
+      await api.updateKeyword(bot.id, kw.id, { triggers: newTriggers });
+      load();
+    } catch (err) {
+      toast.error(`Erro ao remover variação: ${extractApiError(err)}`);
+    }
+  };
+
   return (
     <Modal open={open} onClose={onClose} title={`Keywords — ${bot.name}`} wide>
       <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 18 }}>
-        Matching case-insensitive. Use goto para direcionar o bot a outro fluxo após a resposta.
+        Matching case-insensitive. Adicione variações para melhorar o reconhecimento. Use IA para gerar variações automaticamente.
       </p>
       <form onSubmit={handleSubmit(onAdd)} className="keyword-form">
         <div className="keyword-form__inputs">
-          <input {...register('trigger', { required: true })} placeholder="Palavra-chave" className="form-input" style={{ flex: 1 }} />
+          <input {...register('trigger', { required: true })} placeholder="Palavra-chave principal" className="form-input" style={{ flex: 1 }} />
           <div style={{ flex: 1 }}>
             <VariableInput
               value={responseValue}
@@ -562,8 +617,39 @@ function KeywordsModal({ open, onClose, bot }: { open: boolean; onClose: () => v
             />
           </div>
         </div>
-        <GotoSelector gotoType={gotoType} gotoTarget={gotoTarget} onTypeChange={setGotoType} onTargetChange={setGotoTarget} keywords={keywords} menus={menus} label="Goto (navegação após resposta)" showIteration showLastInteraction />
 
+        <div className="keyword-triggers-section">
+          <label className="keyword-triggers-section__label">
+            <List size={14} />
+            Variações (sinônimos / erros de digitação)
+          </label>
+          <div className="keyword-triggers-input-row">
+            <input
+              className="form-input"
+              placeholder="Ex: oii, olá, ola, hey..."
+              value={variationInput}
+              onChange={(e) => setVariationInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addVariation(); } }}
+            />
+            <button type="button" className="btn btn-secondary btn-sm" onClick={addVariation}>
+              <Plus size={14} />
+            </button>
+          </div>
+          {triggerVariations.length > 0 && (
+            <div className="keyword-triggers-tags">
+              {triggerVariations.map((v) => (
+                <span key={v} className="keyword-trigger-tag">
+                  {v}
+                  <button type="button" className="keyword-trigger-tag__remove" onClick={() => removeVariation(v)}>
+                    <X size={11} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <GotoSelector gotoType={gotoType} gotoTarget={gotoTarget} onTypeChange={setGotoType} onTargetChange={setGotoTarget} keywords={keywords} menus={menus} label="Goto (navegação após resposta)" showIteration showLastInteraction />
 
         <div className="capture-section">
           <label className="capture-toggle">
@@ -606,10 +692,20 @@ function KeywordsModal({ open, onClose, bot }: { open: boolean; onClose: () => v
         ) : keywords.length === 0 ? (
           <p style={{ fontSize: 13, color: 'var(--color-text-muted)', textAlign: 'center', padding: '24px 0' }}>Nenhuma keyword cadastrada.</p>
         ) : keywords.map((kw) => (
-          <div key={kw.id} className="keyword-row">
+          <div key={kw.id} className="keyword-row keyword-row--expandable">
             <div className="keyword-row__content">
               <div className="keyword-row__trigger-line">
                 <span className="keyword-row__trigger">{kw.trigger}</span>
+                {kw.triggers && kw.triggers.length > 0 && (
+                  <button
+                    type="button"
+                    className="keyword-row__variations-badge"
+                    onClick={() => setExpandedId(expandedId === kw.id ? null : kw.id)}
+                    title="Ver variações"
+                  >
+                    <List size={11} /> {kw.triggers.length} variações
+                  </button>
+                )}
                 <span className="keyword-row__arrow">→</span>
                 <span className="keyword-row__response">{kw.response}</span>
               </div>
@@ -623,10 +719,49 @@ function KeywordsModal({ open, onClose, bot }: { open: boolean; onClose: () => v
                   <Zap size={11} /> captura: {kw.captureVariable.name} ({kw.captureVariable.type})
                 </div>
               )}
+
+              {expandedId === kw.id && (
+                <div className="keyword-row__triggers-expanded">
+                  <div className="keyword-triggers-tags">
+                    {(kw.triggers || []).map((t) => (
+                      <span key={t} className="keyword-trigger-tag">
+                        {t}
+                        <button type="button" className="keyword-trigger-tag__remove" onClick={() => removeEditTrigger(kw, t)}>
+                          <X size={11} />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                  <div className="keyword-triggers-input-row" style={{ marginTop: 6 }}>
+                    <input
+                      className="form-input form-input--sm"
+                      placeholder="Nova variação..."
+                      value={editTriggersId === kw.id ? editTriggersInput : ''}
+                      onFocus={() => { setEditTriggersId(kw.id); setEditTriggersInput(''); }}
+                      onChange={(e) => { setEditTriggersId(kw.id); setEditTriggersInput(e.target.value); }}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addEditTrigger(kw); } }}
+                    />
+                    <button type="button" className="btn btn-secondary btn-sm" onClick={() => addEditTrigger(kw)}>
+                      <Plus size={14} />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
-            <button className="keyword-row__delete" onClick={() => onDelete(kw.id)}>
-              <Trash2 size={15} />
-            </button>
+            <div className="keyword-row__actions">
+              <button
+                type="button"
+                className="keyword-row__ai-btn"
+                onClick={() => onAiEnhance(kw.id)}
+                disabled={enhancingId === kw.id}
+                title="Gerar variações com IA"
+              >
+                {enhancingId === kw.id ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
+              </button>
+              <button className="keyword-row__delete" onClick={() => onDelete(kw.id)}>
+                <Trash2 size={15} />
+              </button>
+            </div>
           </div>
         ))}
       </div>

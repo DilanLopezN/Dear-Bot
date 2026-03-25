@@ -53,6 +53,7 @@ export interface Keyword {
   id: string;
   botId: string;
   trigger: string;
+  triggers: string[];
   response: string;
   priority: number;
   isActive: boolean;
@@ -283,7 +284,7 @@ class ApiService {
     return data;
   }
 
-  async createKeyword(botId: string, payload: { trigger: string; response: string; priority?: number; goto?: GotoTarget; captureVariable?: CaptureVariable }) {
+  async createKeyword(botId: string, payload: { trigger: string; triggers?: string[]; response: string; priority?: number; goto?: GotoTarget; captureVariable?: CaptureVariable }) {
     const { data } = await this.client.post(`/bots/${botId}/keywords`, payload);
     return data;
   }
@@ -295,6 +296,11 @@ class ApiService {
 
   async deleteKeyword(botId: string, keywordId: string) {
     const { data } = await this.client.delete(`/bots/${botId}/keywords/${keywordId}`);
+    return data;
+  }
+
+  async aiEnhanceKeyword(botId: string, keywordId: string): Promise<Keyword> {
+    const { data } = await this.client.post(`/bots/${botId}/keywords/${keywordId}/ai-enhance`);
     return data;
   }
 

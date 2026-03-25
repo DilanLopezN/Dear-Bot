@@ -768,6 +768,60 @@ class ApiService {
     const { data } = await this.client.delete('/configuracao/instance');
     return data;
   }
+
+  // ── Admin Panel ──────────────────────────────────────────────────────────
+
+  async adminLogin(password: string) {
+    const { data } = await this.client.post('/admin/login', { password });
+    return data;
+  }
+
+  async adminGetDashboard(token: string) {
+    const { data } = await this.client.get('/admin/dashboard', {
+      headers: { 'x-admin-token': token },
+    });
+    return data;
+  }
+
+  async adminGetUsers(token: string, filters?: { search?: string; plan?: string; active?: string }) {
+    const params = new URLSearchParams();
+    if (filters?.search) params.set('search', filters.search);
+    if (filters?.plan) params.set('plan', filters.plan);
+    if (filters?.active) params.set('active', filters.active);
+    const query = params.toString();
+    const { data } = await this.client.get(`/admin/users${query ? `?${query}` : ''}`, {
+      headers: { 'x-admin-token': token },
+    });
+    return data;
+  }
+
+  async adminGetUser(token: string, userId: string) {
+    const { data } = await this.client.get(`/admin/users/${userId}`, {
+      headers: { 'x-admin-token': token },
+    });
+    return data;
+  }
+
+  async adminUpdateUser(token: string, userId: string, payload: Record<string, unknown>) {
+    const { data } = await this.client.put(`/admin/users/${userId}`, payload, {
+      headers: { 'x-admin-token': token },
+    });
+    return data;
+  }
+
+  async adminUpdateUserPlan(token: string, userId: string, payload: { plan: string; planActive: boolean; planDays?: number }) {
+    const { data } = await this.client.put(`/admin/users/${userId}/plan`, payload, {
+      headers: { 'x-admin-token': token },
+    });
+    return data;
+  }
+
+  async adminDeleteUser(token: string, userId: string) {
+    const { data } = await this.client.delete(`/admin/users/${userId}`, {
+      headers: { 'x-admin-token': token },
+    });
+    return data;
+  }
 }
 
 export const api = new ApiService();

@@ -71,7 +71,18 @@ export class SubscriptionController {
   @HttpCode(200)
   async handleAsaasWebhook(@Req() req: any) {
     const { event, payment } = req.body;
-    this.logger.log(`Webhook Asaas recebido: ${event}`);
+    this.logger.log(`======== WEBHOOK ASAAS ========`);
+    this.logger.log(`Evento: ${event}`);
+    this.logger.log(`Payment ID: ${payment?.id}`);
+    this.logger.log(`Payment Status: ${payment?.status}`);
+    this.logger.log(`Subscription ID: ${payment?.subscription}`);
+    this.logger.log(`Value: ${payment?.value}`);
+    this.logger.log(`Billing Type: ${payment?.billingType}`);
+    this.logger.log(`Due Date: ${payment?.dueDate}`);
+    this.logger.log(`Customer: ${payment?.customer}`);
+    this.logger.log(`External Reference: ${payment?.externalReference}`);
+    this.logger.log(`Payment Data: ${JSON.stringify(payment, null, 2)}`);
+    this.logger.log(`===============================`);
     await this.subscriptionService.handlePaymentWebhook(event, payment);
     return { received: true };
   }

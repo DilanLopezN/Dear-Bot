@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConversationService } from '../conversation/conversation.service';
 import { KeywordService, CaptureVariableConfig } from '../keyword/keyword.service';
+import { KeywordAIService } from '../keyword/keyword-ai.service';
 import { MenuService } from '../menu/menu.service';
 import { ClaudeService } from '../services/claude.service';
 import { OpenAIService } from '../services/openai.service';
@@ -50,6 +51,7 @@ export class WebhookService {
     private prisma: PrismaService,
     private conversationService: ConversationService,
     private keywordService: KeywordService,
+    private keywordAIService: KeywordAIService,
     private menuService: MenuService,
     private claudeService: ClaudeService,
     private openaiService: OpenAIService,
@@ -855,6 +857,43 @@ export class WebhookService {
     this.logger.log(`Conversa ${conversationId} encerrada (CLOSED)`);
   }
 
+  /**
+   * Tenta fazer match de keyword usando I.A. para mensagens parecidas.
+   * Usado nos modos AI e HYBRID quando o match direto falha.
+   */
+  private async tryAIKeywordMatch(bot: any, botId: string, message: string) {
+    try {
+      const keywords = await this.prisma.keyword.findMany({
+        where: { botId, isActive: true },
+        orderBy: { priority: 'desc' },
+      });
+
+      if (!keywords.length || !bot.aiConfig) return null;
+
+      const keywordList = keywords.map(kw => ({
+        trigger: kw.trigger,
+        triggers: kw.triggers && kw.triggers.length > 0 ? kw.triggers : [kw.trigger],
+      }));
+
+      const matchedTrigger = await this.keywordAIService.matchKeywordWithAI(bot, message, keywordList);
+      if (!matchedTrigger) return null;
+
+      const matchedKw = keywords.find(kw => kw.trigger.toLowerCase() === matchedTrigger.toLowerCase());
+      if (!matchedKw) return null;
+
+      this.logger.log(`I.A. match: "${message}" → keyword "${matchedKw.trigger}"`);
+
+      return {
+        response: matchedKw.response,
+        goto: matchedKw.goto as any,
+        captureVariable: matchedKw.captureVariable as any,
+      };
+    } catch (err) {
+      this.logger.warn(`Erro no AI keyword match: ${err.message}`);
+      return null;
+    }
+  }
+
   private async executeFallback(
     bot: any,
     channel: ChannelConfig,
@@ -1204,9 +1243,44 @@ export class WebhookService {
           break;
         }
 
-        case 'AI':
+        case 'AI': {
+          // No modo AI, tentar match por keyword com I.A. antes de gerar resposta livre
+          const aiKeywordMatch = await this.keywordService.findMatch(botId, text);
+          if (aiKeywordMatch) {
+            responseText = await this.interpolateVariables(aiKeywordMatch.response, conversation.id, context);
+            const result = await this.messaging.sendTextMessage(channel, from, responseText);
+            await this.conversationService.saveMessage(conversation.id, 'OUTBOUND', responseText, result?.messageId);
+
+            if (aiKeywordMatch.captureVariable) {
+              await this.startVariableCapture(botId, channel, from, conversation.id, aiKeywordMatch.captureVariable, aiKeywordMatch.goto);
+              return;
+            }
+            if (aiKeywordMatch.goto) {
+              await this.executeGoto(botId, channel, from, conversation.id, aiKeywordMatch.goto);
+            }
+            return;
+          }
+
+          // Tentar match similar via I.A. (keywords parecidas)
+          const aiSimilarMatch = await this.tryAIKeywordMatch(bot, botId, text);
+          if (aiSimilarMatch) {
+            responseText = await this.interpolateVariables(aiSimilarMatch.response, conversation.id, context);
+            const result = await this.messaging.sendTextMessage(channel, from, responseText);
+            await this.conversationService.saveMessage(conversation.id, 'OUTBOUND', responseText, result?.messageId);
+
+            if (aiSimilarMatch.captureVariable) {
+              await this.startVariableCapture(botId, channel, from, conversation.id, aiSimilarMatch.captureVariable, aiSimilarMatch.goto);
+              return;
+            }
+            if (aiSimilarMatch.goto) {
+              await this.executeGoto(botId, channel, from, conversation.id, aiSimilarMatch.goto);
+            }
+            return;
+          }
+
           responseText = await this.generateAIResponse(bot, conversation.id, text, context);
           break;
+        }
 
         case 'HYBRID': {
           const match = await this.keywordService.findMatch(botId, text);
@@ -1227,6 +1301,23 @@ export class WebhookService {
 
             if (match.goto) {
               await this.executeGoto(botId, channel, from, conversation.id, match.goto);
+            }
+            return;
+          }
+
+          // Tentar match similar via I.A. (keywords parecidas)
+          const hybridSimilarMatch = await this.tryAIKeywordMatch(bot, botId, text);
+          if (hybridSimilarMatch) {
+            responseText = await this.interpolateVariables(hybridSimilarMatch.response, conversation.id, context);
+            const result = await this.messaging.sendTextMessage(channel, from, responseText);
+            await this.conversationService.saveMessage(conversation.id, 'OUTBOUND', responseText, result?.messageId);
+
+            if (hybridSimilarMatch.captureVariable) {
+              await this.startVariableCapture(botId, channel, from, conversation.id, hybridSimilarMatch.captureVariable, hybridSimilarMatch.goto);
+              return;
+            }
+            if (hybridSimilarMatch.goto) {
+              await this.executeGoto(botId, channel, from, conversation.id, hybridSimilarMatch.goto);
             }
             return;
           }

@@ -263,7 +263,8 @@ model WhatsappChannel {
 model Keyword {
   id              String   @id @default(uuid())
   botId           String
-  trigger         String   // Palavra/frase que ativa a resposta
+  trigger         String   // Keyword principal (primeira da lista)
+  triggers        String[] @default([]) // Lista de variações da keyword (ex: ["oi", "oiii", "ola", "olaa"])
   response        String   @db.Text // Resposta fixa
   priority        Int      @default(0)
   isActive        Boolean  @default(true)

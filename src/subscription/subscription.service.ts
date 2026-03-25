@@ -309,11 +309,15 @@ export class SubscriptionService {
   // ─── Webhook do Asaas ──────────────────────────────────────────────────────
 
   async handlePaymentWebhook(event: string, payment: any) {
-    this.logger.log(`Webhook Asaas recebido: ${event}`);
+    this.logger.log(`======== PROCESSANDO WEBHOOK ========`);
+    this.logger.log(`Evento: ${event} | Payment ID: ${payment?.id} | Status: ${payment?.status}`);
+    this.logger.log(`Subscription ID: ${payment?.subscription} | Value: ${payment?.value} | Billing: ${payment?.billingType}`);
+    this.logger.log(`Due Date: ${payment?.dueDate} | Customer: ${payment?.customer}`);
+    this.logger.log(`=====================================`);
 
     const subscriptionId = payment?.subscription;
     if (!subscriptionId) {
-      this.logger.warn('Webhook sem subscription ID, ignorando');
+      this.logger.warn(`Webhook sem subscription ID, ignorando. Payment ID: ${payment?.id}`);
       return;
     }
 

@@ -11,6 +11,8 @@ import { Type } from 'class-transformer';
 export enum GotoTargetType {
   MENU = 'MENU',
   KEYWORD = 'KEYWORD',
+  ITERATION = 'ITERATION',
+  LAST_INTERACTION = 'LAST_INTERACTION',
 }
 
 export enum VariableTypeDto {

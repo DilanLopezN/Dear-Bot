@@ -1989,6 +1989,7 @@ function IterationsModal({ open, onClose, bot }: { open: boolean; onClose: () =>
 
   // AI content
   const [aiPrompt, setAiPrompt] = useState('');
+  const [aiUseRag, setAiUseRag] = useState(false);
 
   const resetForm = () => {
     setFormName('');
@@ -2011,6 +2012,7 @@ function IterationsModal({ open, onClose, bot }: { open: boolean; onClose: () =>
     setCapGotoTarget('');
     setCloseMessage('Atendimento encerrado. Obrigado pelo contato!');
     setAiPrompt('');
+    setAiUseRag(false);
     setEditingId(null);
   };
 
@@ -2052,7 +2054,7 @@ function IterationsModal({ open, onClose, bot }: { open: boolean; onClose: () =>
       case 'CLOSE_CONVERSATION':
         return { message: closeMessage };
       case 'AI':
-        return { prompt: aiPrompt };
+        return { prompt: aiPrompt, useRag: aiUseRag };
       default:
         return {};
     }
@@ -2135,6 +2137,7 @@ function IterationsModal({ open, onClose, bot }: { open: boolean; onClose: () =>
         break;
       case 'AI':
         setAiPrompt(c.prompt || '');
+        setAiUseRag(Boolean(c.useRag));
         break;
     }
   };
@@ -2309,20 +2312,37 @@ function IterationsModal({ open, onClose, bot }: { open: boolean; onClose: () =>
 
           {/* AI fields */}
           {formType === 'AI' && (
-            <FormField label="Prompt da I.A.">
-              <VariableInput
-                value={aiPrompt}
-                onChange={setAiPrompt}
-                variables={botVariables}
-                multiline
-                rows={5}
-                placeholder="Instruções para a I.A. seguir neste ponto do fluxo. Ex: 'Você é um assistente de vendas. Apresente os produtos disponíveis e ajude o cliente a escolher.' Digite /var para inserir variáveis."
-                className="form-input"
-              />
-              <p style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 4 }}>
-                A I.A. seguirá exatamente este prompt quando o fluxo chegar nesta iteração. Funciona apenas nos modos I.A. ou Híbrido.
-              </p>
-            </FormField>
+            <>
+              <FormField label="Prompt da I.A.">
+                <VariableInput
+                  value={aiPrompt}
+                  onChange={setAiPrompt}
+                  variables={botVariables}
+                  multiline
+                  rows={5}
+                  placeholder="Instruções para a I.A. seguir neste ponto do fluxo. Ex: 'Você é um assistente de vendas. Apresente os produtos disponíveis e ajude o cliente a escolher.' Digite /var para inserir variáveis."
+                  className="form-input"
+                />
+                <p style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 4 }}>
+                  A I.A. seguirá exatamente este prompt quando o fluxo chegar nesta iteração. Funciona apenas nos modos I.A. ou Híbrido.
+                </p>
+              </FormField>
+              <div className="capture-section">
+                <label className="capture-toggle">
+                  <input
+                    type="checkbox"
+                    className="capture-toggle__checkbox"
+                    checked={aiUseRag}
+                    onChange={(e) => setAiUseRag(e.target.checked)}
+                  />
+                  <Database size={14} color="#38bdf8" />
+                  <span className="capture-toggle__label">RAG (usar base de conhecimento)</span>
+                </label>
+                <p style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 4 }}>
+                  Quando ativado, a I.A. consultará os arquivos enviados à base de conhecimento deste bot para responder.
+                </p>
+              </div>
+            </>
           )}
 
           <div className="modal__footer" style={{ marginTop: 16 }}>

@@ -472,6 +472,7 @@ export class WebhookService {
     iterationPrompt: string,
     context?: ConversationContext,
     learningContext?: string,
+    useRag: boolean = false,
   ): Promise<string> {
     // Usar o prompt da iteração como base, enriquecido com contexto da conversa
     let enrichedPrompt = context
@@ -483,15 +484,17 @@ export class WebhookService {
       enrichedPrompt += `\n\n${learningContext}`;
     }
 
-    // Buscar conhecimento relevante via RAG
+    // Buscar conhecimento relevante via RAG (somente quando habilitado na iteração)
     let knowledgeContext: string | undefined;
-    try {
-      const relevantChunks = await this.knowledgeService.searchRelevantChunks(bot.id, userMessage, 5);
-      if (relevantChunks.length > 0) {
-        knowledgeContext = relevantChunks.join('\n\n---\n\n');
+    if (useRag) {
+      try {
+        const relevantChunks = await this.knowledgeService.searchRelevantChunks(bot.id, userMessage, 5);
+        if (relevantChunks.length > 0) {
+          knowledgeContext = relevantChunks.join('\n\n---\n\n');
+        }
+      } catch (error) {
+        this.logger.warn(`Erro ao buscar conhecimento para bot ${bot.id}: ${error.message}`);
       }
-    } catch (error) {
-      this.logger.warn(`Erro ao buscar conhecimento para bot ${bot.id}: ${error.message}`);
     }
 
     const aiConfig = bot.aiConfig;
@@ -861,6 +864,7 @@ export class WebhookService {
           aiPrompt,
           aiContext,
           learningContext,
+          Boolean(content.useRag),
         );
 
         if (aiResponseText) {

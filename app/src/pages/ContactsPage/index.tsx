@@ -133,7 +133,7 @@ export default function ContactsPage() {
               </p>
             </div>
           </div>
-          <button className="btn-primary" onClick={openCreate}>
+          <button className="btn btn-primary" onClick={openCreate}>
             <Plus size={16} /> Novo Contato
           </button>
         </div>

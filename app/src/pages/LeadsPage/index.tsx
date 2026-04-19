@@ -188,7 +188,7 @@ export default function LeadsPage() {
             </div>
           </div>
           <button
-            className="btn-primary"
+            className="btn btn-primary"
             onClick={handleSync}
             disabled={syncing || !selectedBotId}
           >

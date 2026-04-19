@@ -131,7 +131,7 @@ export default function ScheduledMessagesPage() {
               </p>
             </div>
           </div>
-          <button className="btn-primary" onClick={openModal}>
+          <button className="btn btn-primary" onClick={openModal}>
             <Plus size={16} /> Agendar Mensagem
           </button>
         </div>

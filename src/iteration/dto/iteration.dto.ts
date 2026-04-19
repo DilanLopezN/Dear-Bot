@@ -10,12 +10,21 @@ export enum IterationTypeDto {
   AI = 'AI',
 }
 
+export enum IterationModeDto {
+  FLUXO = 'FLUXO',
+  CHAMADA = 'CHAMADA',
+}
+
 export class CreateIterationDto {
   @IsString()
   name: string;
 
   @IsEnum(IterationTypeDto)
   type: IterationTypeDto;
+
+  @IsEnum(IterationModeDto)
+  @IsOptional()
+  mode?: IterationModeDto;
 
   @IsObject()
   content: Record<string, any>;
@@ -33,6 +42,10 @@ export class UpdateIterationDto {
   @IsEnum(IterationTypeDto)
   @IsOptional()
   type?: IterationTypeDto;
+
+  @IsEnum(IterationModeDto)
+  @IsOptional()
+  mode?: IterationModeDto;
 
   @IsObject()
   @IsOptional()

@@ -20,6 +20,7 @@ export class IterationService {
         botId,
         name: dto.name,
         type: dto.type,
+        mode: dto.mode ?? 'FLUXO',
         content: dto.content as any,
         order: dto.order ?? 0,
       },
@@ -56,6 +57,7 @@ export class IterationService {
       data: {
         ...(dto.name !== undefined && { name: dto.name }),
         ...(dto.type !== undefined && { type: dto.type }),
+        ...(dto.mode !== undefined && { mode: dto.mode }),
         ...(dto.content !== undefined && { content: dto.content as any }),
         ...(dto.order !== undefined && { order: dto.order }),
         ...(dto.isActive !== undefined && { isActive: dto.isActive }),

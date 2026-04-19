@@ -307,7 +307,7 @@ function GotoSelector({
           <select value={gotoTarget} onChange={(e) => onTargetChange(e.target.value)} className="form-input">
             <option value="">Selecione uma iteração...</option>
             {activeIterations.map((iter) => (
-              <option key={iter.id} value={iter.id}>{iter.name} ({ITERATION_TYPES.find(t => t.value === iter.type)?.label || iter.type})</option>
+              <option key={iter.id} value={iter.id}>{iter.name} · {iter.mode || 'FLUXO'} ({ITERATION_TYPES.find(t => t.value === iter.type)?.label || iter.type})</option>
             ))}
           </select>
         ) : gotoType === 'LAST_INTERACTION' ? (
@@ -649,7 +649,7 @@ function KeywordsModal({ open, onClose, bot }: { open: boolean; onClose: () => v
           )}
         </div>
 
-        <GotoSelector gotoType={gotoType} gotoTarget={gotoTarget} onTypeChange={setGotoType} onTargetChange={setGotoTarget} keywords={keywords} menus={menus} label="Goto (navegação após resposta)" showIteration showLastInteraction />
+        <GotoSelector gotoType={gotoType} gotoTarget={gotoTarget} onTypeChange={setGotoType} onTargetChange={setGotoTarget} keywords={keywords} menus={menus} iterations={iterations} label="Goto (navegação após resposta)" showIteration showLastInteraction />
 
         <div className="capture-section">
           <label className="capture-toggle">
@@ -914,7 +914,7 @@ function MenusModal({ open, onClose, bot }: { open: boolean; onClose: () => void
                 <Plus size={15} />
               </button>
             </div>
-            <GotoSelector gotoType={optGotoType} gotoTarget={optGotoTarget} onTypeChange={setOptGotoType} onTargetChange={setOptGotoTarget} keywords={keywords} menus={menus} label="Goto da opção (navegação após seleção)" showIteration showLastInteraction />
+            <GotoSelector gotoType={optGotoType} gotoTarget={optGotoTarget} onTypeChange={setOptGotoType} onTargetChange={setOptGotoTarget} keywords={keywords} menus={menus} iterations={iterations} label="Goto da opção (navegação após seleção)" showIteration showLastInteraction />
             <div className="option-builder__list">
               {options.map((opt, i) => (
                 <div key={opt.id} className="option-builder__item">
@@ -1957,6 +1957,7 @@ function IterationsModal({ open, onClose, bot }: { open: boolean; onClose: () =>
   // Form state
   const [formName, setFormName] = useState('');
   const [formType, setFormType] = useState<BotIteration['type']>('TEXT');
+  const [formMode, setFormMode] = useState<BotIteration['mode']>('FLUXO');
   const [formOrder, setFormOrder] = useState(0);
 
   // TEXT content
@@ -1992,6 +1993,7 @@ function IterationsModal({ open, onClose, bot }: { open: boolean; onClose: () =>
   const resetForm = () => {
     setFormName('');
     setFormType('TEXT');
+    setFormMode('FLUXO');
     setFormOrder(0);
     setTextMessage('');
     setLinkUrl('');
@@ -2063,6 +2065,7 @@ function IterationsModal({ open, onClose, bot }: { open: boolean; onClose: () =>
     const payload = {
       name: formName.trim(),
       type: formType,
+      mode: formMode,
       content: buildContent(),
       order: formOrder,
     };
@@ -2098,6 +2101,7 @@ function IterationsModal({ open, onClose, bot }: { open: boolean; onClose: () =>
     setEditingId(iter.id);
     setFormName(iter.name);
     setFormType(iter.type);
+    setFormMode(iter.mode || 'FLUXO');
     setFormOrder(iter.order);
 
     const c = iter.content as any;
@@ -2170,10 +2174,19 @@ function IterationsModal({ open, onClose, bot }: { open: boolean; onClose: () =>
                 ))}
               </select>
             </FormField>
+            <FormField label="Modo">
+              <select className="form-input" value={formMode} onChange={e => setFormMode(e.target.value as BotIteration['mode'])}>
+                <option value="FLUXO">FLUXO</option>
+                <option value="CHAMADA">CHAMADA</option>
+              </select>
+            </FormField>
             <FormField label="Ordem">
               <input className="form-input" type="number" value={formOrder} onChange={e => setFormOrder(Number(e.target.value))} style={{ width: 80 }} />
             </FormField>
           </div>
+          <p style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: -6, marginBottom: 12 }}>
+            <b>FLUXO</b>: entra automaticamente na sequência do bot. <b>CHAMADA</b>: só executa quando um goto (ex.: opção de menu) apontar diretamente para ela.
+          </p>
 
           {/* TEXT fields */}
           {formType === 'TEXT' && (
@@ -2342,6 +2355,20 @@ function IterationsModal({ open, onClose, bot }: { open: boolean; onClose: () =>
                     <span className="keyword-row__trigger">{iter.name}</span>
                   </span>
                   <span className="badge badge-accent" style={{ fontSize: 10, marginLeft: 8 }}>{typeInfo.label}</span>
+                  <span
+                    className="badge"
+                    style={{
+                      fontSize: 10,
+                      marginLeft: 6,
+                      background: (iter.mode || 'FLUXO') === 'CHAMADA' ? 'rgba(6, 182, 212, 0.15)' : 'rgba(74, 222, 128, 0.15)',
+                      color: (iter.mode || 'FLUXO') === 'CHAMADA' ? '#06b6d4' : '#4ade80',
+                      padding: '2px 6px',
+                      borderRadius: 4,
+                    }}
+                    title={(iter.mode || 'FLUXO') === 'CHAMADA' ? 'Só roda quando chamada explicitamente' : 'Roda automaticamente na sequência'}
+                  >
+                    {iter.mode || 'FLUXO'}
+                  </span>
                   <span style={{ fontSize: 11, color: 'var(--color-text-muted)', marginLeft: 8 }}>ordem: {iter.order}</span>
                 </div>
                 <div className="keyword-row__goto" style={{ color: typeInfo.color }}>

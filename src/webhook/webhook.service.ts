@@ -649,7 +649,20 @@ export class WebhookService {
     }
 
     if (goto.type === 'ITERATION') {
-      await this.executeIterations(botId, channel, to, conversationId);
+      if (goto.target) {
+        // Executa uma iteração específica (único caminho para chamar iterações do modo CHAMADA)
+        const iter = await this.prisma.botIteration.findFirst({
+          where: { id: goto.target, botId, isActive: true },
+        });
+        if (iter) {
+          await this.executeSingleIteration(botId, channel, to, conversationId, iter, -1, 1);
+        } else {
+          this.logger.warn(`Iteração ${goto.target} não encontrada (ou inativa) para bot ${botId}`);
+        }
+      } else {
+        // Sem target: executa a sequência completa de iterações de FLUXO
+        await this.executeIterations(botId, channel, to, conversationId);
+      }
       if (closeAfter) await this.closeConversation(conversationId);
       return true;
     }
@@ -675,16 +688,18 @@ export class WebhookService {
     return false;
   }
 
-  /** Executa todas as iterações ativas do bot em sequência estrita, respeitando a ordem */
+  /** Executa todas as iterações ativas do modo FLUXO em sequência estrita, respeitando a ordem.
+   * Iterações do modo CHAMADA são ignoradas aqui e só rodam via goto direto (por ID). */
   private async executeIterations(
     botId: string,
     channel: ChannelConfig,
     to: string,
     conversationId: string,
   ) {
-    const iterations = await this.iterationService.findActiveByBot(botId);
+    const all = await this.iterationService.findActiveByBot(botId);
+    const iterations = all.filter((i: any) => i.mode !== 'CHAMADA');
     if (!iterations.length) {
-      this.logger.warn(`Nenhuma iteração ativa encontrada para bot ${botId}`);
+      this.logger.warn(`Nenhuma iteração ativa de FLUXO encontrada para bot ${botId}`);
       return;
     }
 
@@ -698,141 +713,16 @@ export class WebhookService {
 
     for (let i = 0; i < iterations.length; i++) {
       const iteration = iterations[i];
-      const content = iteration.content as any;
-
-      // Atualizar índice da iteração atual no banco
-      await this.prisma.conversation.update({
-        where: { id: conversationId },
-        data: { currentIterationIndex: i },
-      });
-
-      this.logger.log(`Executando iteração ${i}/${iterations.length - 1}: ${iteration.type} (order: ${iteration.order}, name: ${iteration.name})`);
-
-      switch (iteration.type) {
-        case 'TEXT': {
-          const text = await this.interpolateVariables(content.message || '', conversationId);
-          const result = await this.messaging.sendTextMessage(channel, to, text);
-          await this.conversationService.saveMessage(conversationId, 'OUTBOUND', text, result?.messageId);
-          break;
-        }
-
-        case 'LINK': {
-          const linkText = content.title
-            ? `${content.title}\n${content.url}`
-            : content.url;
-          const interpolated = await this.interpolateVariables(linkText, conversationId);
-          const result = await this.messaging.sendTextMessage(channel, to, interpolated);
-          await this.conversationService.saveMessage(conversationId, 'OUTBOUND', interpolated, result?.messageId);
-          break;
-        }
-
-        case 'DOCUMENT': {
-          const mediaType = content.mediaType || 'document';
-          const result = await this.messaging.sendMediaMessage(
-            channel,
-            to,
-            mediaType,
-            content.url,
-            content.caption,
-            content.filename,
-          );
-          const savedContent = content.caption
-            ? `[${mediaType}] ${content.caption} — ${content.url}`
-            : `[${mediaType}] ${content.url}`;
-          await this.conversationService.saveMessage(conversationId, 'OUTBOUND', savedContent, result?.messageId);
-          break;
-        }
-
-        case 'GOTO': {
-          const gotoConfig: GotoConfig = { type: content.type, target: content.target };
-          await this.executeGoto(botId, channel, to, conversationId, gotoConfig);
-          break;
-        }
-
-        case 'CAPTURE_VARIABLE': {
-          const captureConfig = {
-            name: content.name,
-            type: content.variableType || 'STRING',
-            promptMessage: content.promptMessage,
-          };
-          const gotoAfter = content.goto ? { type: content.goto.type, target: content.goto.target } : undefined;
-          await this.startVariableCapture(botId, channel, to, conversationId, captureConfig, gotoAfter);
-          // Mantemos currentIterationIndex para retomar após captura
-          return; // Paramos a cadeia pois aguardamos input do usuário
-        }
-
-        case 'CLOSE_CONVERSATION': {
-          const closeMsg = content.message || 'Atendimento encerrado. Obrigado pelo contato!';
-          const interpolatedMsg = await this.interpolateVariables(closeMsg, conversationId);
-          const result = await this.messaging.sendTextMessage(channel, to, interpolatedMsg);
-          await this.conversationService.saveMessage(conversationId, 'OUTBOUND', interpolatedMsg, result?.messageId);
-          await this.closeConversation(conversationId);
-          return; // Paramos a cadeia pois a conversa foi encerrada
-        }
-
-        case 'AI': {
-          // Iteração de I.A. - só funciona se o bot estiver no modo AI ou HYBRID
-          const bot = await this.prisma.bot.findUnique({
-            where: { id: botId },
-            include: { aiConfig: true },
-          });
-
-          if (!bot || (bot.responseMode !== 'AI' && bot.responseMode !== 'HYBRID')) {
-            this.logger.warn(
-              `Iteração AI ignorada: bot ${botId} não está no modo AI ou HYBRID (modo atual: ${bot?.responseMode})`,
-            );
-            break;
-          }
-
-          // Buscar a última mensagem do usuário para usar como input da IA
-          const recentMessages = await this.conversationService.getMessages(conversationId, 10);
-          const lastInbound = recentMessages.find((m) => m.direction === 'INBOUND');
-          const userMessage = lastInbound?.content || '';
-
-          // O prompt da iteração é usado como systemPrompt específico para este ponto do fluxo
-          const aiPrompt = await this.interpolateVariables(content.prompt || '', conversationId);
-
-          // Buscar contexto da conversa
-          const conversation = await this.prisma.conversation.findUnique({
-            where: { id: conversationId },
-          });
-          const aiContext = conversation ? await this.getOrBuildContext(conversation) : undefined;
-
-          // Buscar aprendizados da IA para enriquecer o prompt
-          const contactPhone = conversation?.contactPhone;
-          const learningContext = await this.aiLearningService.getLearningContext(botId, contactPhone || undefined);
-
-          // Gerar resposta da IA usando o prompt específico desta iteração
-          const aiResponseText = await this.generateAIResponseForIteration(
-            bot,
-            conversationId,
-            userMessage,
-            aiPrompt,
-            aiContext,
-            learningContext,
-          );
-
-          if (aiResponseText) {
-            const aiResult = await this.messaging.sendTextMessage(channel, to, aiResponseText);
-            await this.conversationService.saveMessage(
-              conversationId,
-              'OUTBOUND',
-              aiResponseText,
-              aiResult?.messageId,
-            );
-
-            // Salvar aprendizado da interação
-            this.aiLearningService.saveInteractionLearning(
-              botId,
-              contactPhone || '',
-              userMessage,
-              aiResponseText,
-              conversation?.contactName || undefined,
-            ).catch((err) => this.logger.warn(`Erro ao salvar aprendizado: ${err.message}`));
-          }
-          break;
-        }
-      }
+      const signal = await this.executeSingleIteration(
+        botId,
+        channel,
+        to,
+        conversationId,
+        iteration,
+        i,
+        iterations.length,
+      );
+      if (signal === 'STOP') return;
     }
 
     // Resetar índice de iteração ao terminar
@@ -842,6 +732,160 @@ export class WebhookService {
     });
 
     this.logger.log(`Iterações concluídas para conversa ${conversationId}`);
+  }
+
+  /** Executa UMA iteração específica. Usado tanto pela sequência de FLUXO quanto por gotos que apontam
+   * diretamente para uma iteração (caso de uso típico: menu interativo chamando uma iteração CHAMADA).
+   * Retorna 'STOP' quando a cadeia não deve continuar (captura de variável, encerramento). */
+  private async executeSingleIteration(
+    botId: string,
+    channel: ChannelConfig,
+    to: string,
+    conversationId: string,
+    iteration: any,
+    index: number,
+    total: number,
+  ): Promise<'CONTINUE' | 'STOP'> {
+    const content = iteration.content as any;
+
+    if (index >= 0) {
+      await this.prisma.conversation.update({
+        where: { id: conversationId },
+        data: { currentIterationIndex: index },
+      });
+    }
+
+    this.logger.log(
+      `Executando iteração ${index >= 0 ? `${index}/${total - 1}` : '(single)'}: ${iteration.type} (order: ${iteration.order}, name: ${iteration.name})`,
+    );
+
+    switch (iteration.type) {
+      case 'TEXT': {
+        const text = await this.interpolateVariables(content.message || '', conversationId);
+        const result = await this.messaging.sendTextMessage(channel, to, text);
+        await this.conversationService.saveMessage(conversationId, 'OUTBOUND', text, result?.messageId);
+        return 'CONTINUE';
+      }
+
+      case 'LINK': {
+        const linkText = content.title
+          ? `${content.title}\n${content.url}`
+          : content.url;
+        const interpolated = await this.interpolateVariables(linkText, conversationId);
+        const result = await this.messaging.sendTextMessage(channel, to, interpolated);
+        await this.conversationService.saveMessage(conversationId, 'OUTBOUND', interpolated, result?.messageId);
+        return 'CONTINUE';
+      }
+
+      case 'DOCUMENT': {
+        const mediaType = content.mediaType || 'document';
+        const result = await this.messaging.sendMediaMessage(
+          channel,
+          to,
+          mediaType,
+          content.url,
+          content.caption,
+          content.filename,
+        );
+        const savedContent = content.caption
+          ? `[${mediaType}] ${content.caption} — ${content.url}`
+          : `[${mediaType}] ${content.url}`;
+        await this.conversationService.saveMessage(conversationId, 'OUTBOUND', savedContent, result?.messageId);
+        return 'CONTINUE';
+      }
+
+      case 'GOTO': {
+        const gotoConfig: GotoConfig = { type: content.type, target: content.target };
+        await this.executeGoto(botId, channel, to, conversationId, gotoConfig);
+        return 'CONTINUE';
+      }
+
+      case 'CAPTURE_VARIABLE': {
+        const captureConfig = {
+          name: content.name,
+          type: content.variableType || 'STRING',
+          promptMessage: content.promptMessage,
+        };
+        const gotoAfter = content.goto ? { type: content.goto.type, target: content.goto.target } : undefined;
+        await this.startVariableCapture(botId, channel, to, conversationId, captureConfig, gotoAfter);
+        // Mantemos currentIterationIndex para retomar após captura
+        return 'STOP';
+      }
+
+      case 'CLOSE_CONVERSATION': {
+        const closeMsg = content.message || 'Atendimento encerrado. Obrigado pelo contato!';
+        const interpolatedMsg = await this.interpolateVariables(closeMsg, conversationId);
+        const result = await this.messaging.sendTextMessage(channel, to, interpolatedMsg);
+        await this.conversationService.saveMessage(conversationId, 'OUTBOUND', interpolatedMsg, result?.messageId);
+        await this.closeConversation(conversationId);
+        return 'STOP';
+      }
+
+      case 'AI': {
+        // Iteração de I.A. - só funciona se o bot estiver no modo AI ou HYBRID
+        const bot = await this.prisma.bot.findUnique({
+          where: { id: botId },
+          include: { aiConfig: true },
+        });
+
+        if (!bot || (bot.responseMode !== 'AI' && bot.responseMode !== 'HYBRID')) {
+          this.logger.warn(
+            `Iteração AI ignorada: bot ${botId} não está no modo AI ou HYBRID (modo atual: ${bot?.responseMode})`,
+          );
+          return 'CONTINUE';
+        }
+
+        // Buscar a última mensagem do usuário para usar como input da IA
+        const recentMessages = await this.conversationService.getMessages(conversationId, 10);
+        const lastInbound = recentMessages.find((m) => m.direction === 'INBOUND');
+        const userMessage = lastInbound?.content || '';
+
+        // O prompt da iteração é usado como systemPrompt específico para este ponto do fluxo
+        const aiPrompt = await this.interpolateVariables(content.prompt || '', conversationId);
+
+        // Buscar contexto da conversa
+        const conversation = await this.prisma.conversation.findUnique({
+          where: { id: conversationId },
+        });
+        const aiContext = conversation ? await this.getOrBuildContext(conversation) : undefined;
+
+        // Buscar aprendizados da IA para enriquecer o prompt
+        const contactPhone = conversation?.contactPhone;
+        const learningContext = await this.aiLearningService.getLearningContext(botId, contactPhone || undefined);
+
+        // Gerar resposta da IA usando o prompt específico desta iteração
+        const aiResponseText = await this.generateAIResponseForIteration(
+          bot,
+          conversationId,
+          userMessage,
+          aiPrompt,
+          aiContext,
+          learningContext,
+        );
+
+        if (aiResponseText) {
+          const aiResult = await this.messaging.sendTextMessage(channel, to, aiResponseText);
+          await this.conversationService.saveMessage(
+            conversationId,
+            'OUTBOUND',
+            aiResponseText,
+            aiResult?.messageId,
+          );
+
+          // Salvar aprendizado da interação
+          this.aiLearningService.saveInteractionLearning(
+            botId,
+            contactPhone || '',
+            userMessage,
+            aiResponseText,
+            conversation?.contactName || undefined,
+          ).catch((err) => this.logger.warn(`Erro ao salvar aprendizado: ${err.message}`));
+        }
+        return 'CONTINUE';
+      }
+    }
+
+    return 'CONTINUE';
   }
 
   /** Encerra a conversa, marcando como CLOSED */

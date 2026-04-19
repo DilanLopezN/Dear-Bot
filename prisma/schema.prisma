@@ -111,6 +111,11 @@ enum IterationType {
   AI
 }
 
+enum IterationMode {
+  FLUXO
+  CHAMADA
+}
+
 model User {
   id               String   @id @default(uuid())
   email            String   @unique
@@ -510,6 +515,7 @@ model BotIteration {
   botId     String
   name      String        // Nome amigável da iteração
   type      IterationType // TEXT, LINK, DOCUMENT, GOTO, CAPTURE_VARIABLE
+  mode      IterationMode @default(FLUXO) // FLUXO = entra na sequência; CHAMADA = só roda quando um goto aponta pra ela
   content   Json          // Conteúdo específico por tipo
   order     Int           @default(0)
   isActive  Boolean       @default(true)
